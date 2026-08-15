@@ -4,7 +4,9 @@ import {
 	buildCommand,
 	convertArg,
 	formatArgs,
+	formatDistrosList,
 	formatStreams,
+	isDistrosAlias,
 	looksLikeConvertiblePath,
 	looksLikeMissingDistro,
 	parseWslList,
@@ -176,6 +178,16 @@ test("parseWslList decodes UTF-16LE wsl -l output", () => {
 	const utf16 = Buffer.from(`\ufeff${names}`, "utf16le");
 	assert.deepEqual(parseWslList(utf16), ["Ubuntu-24.04", "Debian"]);
 	assert.deepEqual(parseWslList("Ubuntu\nDebian\n"), ["Ubuntu", "Debian"]);
+});
+
+test("isDistrosAlias matches the slash-command words", () => {
+	assert.equal(isDistrosAlias("distros"), true);
+	assert.equal(isDistrosAlias("distro"), true);
+	assert.equal(isDistrosAlias("list"), true);
+	assert.equal(isDistrosAlias("-l"), true);
+	assert.equal(isDistrosAlias("uname -a"), false);
+	assert.equal(formatDistrosList(["Ubuntu-24.04", "Debian"]), "Ubuntu-24.04\nDebian");
+	assert.equal(formatDistrosList([]), "No WSL distros found.");
 });
 
 test("looksLikeMissingDistro matches wsl.exe wording", () => {

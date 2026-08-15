@@ -9,8 +9,10 @@ import { Type } from "typebox";
 import {
 	buildCommand,
 	DEFAULT_TIMEOUT_MS,
+	formatDistrosList,
 	formatStreams,
 	inWsl,
+	isDistrosAlias,
 	killTree,
 	listInstalledDistros,
 	looksLikeMissingDistro,
@@ -301,11 +303,16 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("wsl", {
-		description: "Run a one-liner in WSL (no Git Bash rewrite)",
+		description: "Run a one-liner in WSL, or /wsl distros to list distros",
 		handler: async (args, ctx) => {
 			const command = args.trim();
 			if (!command) {
-				ctx.ui.notify("Usage: /wsl <command>", "error");
+				ctx.ui.notify("Usage: /wsl <command>  |  /wsl distros", "error");
+				return;
+			}
+			if (isDistrosAlias(command)) {
+				const listed = listInstalledDistros();
+				ctx.ui.notify(formatDistrosList(listed), listed.length ? "info" : "error");
 				return;
 			}
 			try {

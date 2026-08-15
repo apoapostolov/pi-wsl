@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-08-16
+
+### Added
+
+- `/wsl distros` lists installed distros via the existing UTF-16LE `wsl -l` decoder. Also accepts `distro`, `list`, and `-l`
+
 ## 0.2.0 - 2026-08-16
 
 Ideas taken from `@bacnh85/pi-windows-tools`, kept on the WSL job.

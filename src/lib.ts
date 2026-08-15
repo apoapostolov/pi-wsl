@@ -249,6 +249,14 @@ export function listInstalledDistros(): string[] {
 	}
 }
 
+export function isDistrosAlias(args: string): boolean {
+	return /^(distros?|list|-l)$/i.test(args.trim());
+}
+
+export function formatDistrosList(names: string[]): string {
+	return names.length ? names.join("\n") : "No WSL distros found.";
+}
+
 export function looksLikeMissingDistro(stderr: string): boolean {
 	return /there is no distribution|invalid distribution|does not exist/i.test(stderr);
 }

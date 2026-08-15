@@ -4,14 +4,14 @@ Pi's `bash` tool is Git Bash. You need Linux, `/mnt/c`, and `\\wsl.localhost` to
 
 This extension spawn()s `System32\wsl.exe` and runs the command in WSL. Git Bash never sees the text.
 
-0.2.0. Still a small tool. The surface can still move.
+0.2.1. Still a small tool. The surface can still move.
 
 ## Install
 
 Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 
 ```bash
-pi install git:github.com/apoapostolov/pi-wsl@v0.2.0
+pi install git:github.com/apoapostolov/pi-wsl@v0.2.1
 ```
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
@@ -45,10 +45,11 @@ args: ["--world", "demo", "status"]
 timeout: 180
 ```
 
-Human shortcut:
+Human shortcuts:
 
 ```text
 /wsl uname -a
+/wsl distros
 ```
 
 Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localhost`. Pass the raw command. Do not wrap it in `wsl -d` or `bash -lc`.
