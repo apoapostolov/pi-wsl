@@ -2,9 +2,7 @@
 
 Pi's `bash` tool is Git Bash. You need Linux, `/mnt/c`, and `\\wsl.localhost` to arrive uncorrupted.
 
-This extension spawn()s `System32\wsl.exe` and runs the command in WSL. Git Bash never sees the text.
-
-0.2.1. Still a small tool. The surface can still move.
+This extension spawn()s `System32\wsl.exe` and runs the command in WSL, so Git Bash never sees the text. Version 0.2.1 is a small tool whose surface can still move.
 
 ## Install
 
@@ -18,11 +16,11 @@ Start a new Pi process after install. `/reload` picks up the code; a pin change 
 
 ## Why this exists
 
-On Windows, Pi's builtin `bash` tool is Git Bash (MSYS). MSYS rewrites Unix paths and strips quote layers before anything reaches WSL. A Linux path, a `/mnt/c` script, or a `\\wsl.localhost\...` file does not arrive as typed.
+On Windows, Pi's builtin `bash` tool is Git Bash (MSYS). MSYS rewrites Unix paths and strips quote layers before anything reaches WSL, so a Linux path, a `/mnt/c` script, or a `\\wsl.localhost\...` file does not arrive as typed.
 
-Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it. That string still goes through Git Bash. `MSYS_NO_PATHCONV=1` only blocks some path rewrites. `$VARS` still vanish. Nested quotes still collapse. `\\wsl.localhost\Distro\home\dev\run.mjs` still becomes `C:\wsl.localhost\Distro\home\dev\run.mjs`, and Node dies `MODULE_NOT_FOUND`.
+Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it, because that string still goes through Git Bash. `MSYS_NO_PATHCONV=1` only blocks some path rewrites, while `$VARS` vanish and nested quotes collapse. `\\wsl.localhost\Distro\home\dev\run.mjs` becomes `C:\wsl.localhost\Distro\home\dev\run.mjs`, and Node dies `MODULE_NOT_FOUND`.
 
-This tool never goes through Git Bash. Node spawn()s `wsl.exe` and feeds bash inside the distro. Linux, `/mnt/c`, and `\\wsl.localhost` stay intact.
+This tool never goes through Git Bash. Node spawn()s `wsl.exe` and feeds bash inside the distro, so Linux, `/mnt/c`, and `\\wsl.localhost` stay intact.
 
 | What you typed | What Git Bash actually ran |
 | --- | --- |
@@ -52,7 +50,7 @@ Human shortcuts:
 /wsl distros
 ```
 
-Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localhost`. Pass the raw command. Do not wrap it in `wsl -d` or `bash -lc`.
+Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localhost`. Pass the raw command, and do not wrap it in `wsl -d` or `bash -lc`.
 
 ## Options
 
@@ -74,14 +72,14 @@ The tool registers on Windows and inside WSL. It does nothing on macOS or native
 
 ## What this does not do
 
-Out of scope on purpose. These are real Win11 + WSL problems. They are not this tool.
+These Win11 + WSL problems are real and stay out of scope.
 
 - File watchers on `/mnt/c` (9p misses events). Copy onto the Linux disk and reload there.
 - Creating a Linux venv with Win32 Python. Create it in WSL.
 - Mixing a WSL `/tmp` file with Windows `gh`. Keep the git/gh chain in one WSL command.
 - Pi `read` on `\\wsl.localhost\...` returning `EPERM`. Use `wsl` `cat`, or a `C:\` path.
 
-This is not a Windows-native shell suite. For PowerShell, cmd, and a doctor, use [`@bacnh85/pi-windows-tools`](https://www.npmjs.com/package/@bacnh85/pi-windows-tools).
+For PowerShell, cmd, and a doctor, install [`@bacnh85/pi-windows-tools`](https://www.npmjs.com/package/@bacnh85/pi-windows-tools). pi-wsl stays a WSL runner.
 
 ## Config
 
