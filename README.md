@@ -2,7 +2,19 @@
 
 Pi's `bash` tool is Git Bash. You need Linux, `/mnt/c`, and `\\wsl.localhost` to arrive uncorrupted.
 
-This extension spawn()s `System32\wsl.exe` and runs the command in WSL, so Git Bash never sees the text. Version 0.2.1 is a small tool whose surface can still move.
+This extension spawn()s `System32\wsl.exe` and runs the command in WSL, so Git Bash never sees the text.
+
+## Why this exists
+
+On Windows, Pi's builtin `bash` tool is Git Bash (MSYS). MSYS rewrites Unix paths and strips quote layers before anything reaches WSL, so a Linux path, a `/mnt/c` script, or a `\\wsl.localhost\...` file does not arrive as typed.
+
+Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it, because that string still goes through Git Bash. `MSYS_NO_PATHCONV=1` only blocks some path rewrites, while `$VARS` vanish and nested quotes collapse. `\\wsl.localhost\Distro\home\dev\run.mjs` becomes `C:\wsl.localhost\Distro\home\dev\run.mjs`, and Node dies `MODULE_NOT_FOUND`.
+
+| What you typed | What Git Bash actually ran |
+| --- | --- |
+| `python3 /mnt/c/proj/sync.py` | `python3 /mnt/c/Users/.../C:/Program Files/Git/mnt/c/proj/sync.py` |
+| `wsl -- bash -lc 'DEST=/tmp/x; mkdir -p $DEST'` | `DEST` empty, `mkdir: missing operand` |
+| `node "\\wsl.localhost\Ubuntu\home\dev\run.mjs"` | `Cannot find module 'C:\wsl.localhost\Ubuntu\home\dev\run.mjs'` |
 
 ## Install
 
@@ -13,20 +25,6 @@ pi install git:github.com/apoapostolov/pi-wsl@v0.2.1
 ```
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
-
-## Why this exists
-
-On Windows, Pi's builtin `bash` tool is Git Bash (MSYS). MSYS rewrites Unix paths and strips quote layers before anything reaches WSL, so a Linux path, a `/mnt/c` script, or a `\\wsl.localhost\...` file does not arrive as typed.
-
-Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it, because that string still goes through Git Bash. `MSYS_NO_PATHCONV=1` only blocks some path rewrites, while `$VARS` vanish and nested quotes collapse. `\\wsl.localhost\Distro\home\dev\run.mjs` becomes `C:\wsl.localhost\Distro\home\dev\run.mjs`, and Node dies `MODULE_NOT_FOUND`.
-
-This tool never goes through Git Bash. Node spawn()s `wsl.exe` and feeds bash inside the distro, so Linux, `/mnt/c`, and `\\wsl.localhost` stay intact.
-
-| What you typed | What Git Bash actually ran |
-| --- | --- |
-| `python3 /mnt/c/proj/sync.py` | `python3 /mnt/c/Users/.../C:/Program Files/Git/mnt/c/proj/sync.py` |
-| `wsl -- bash -lc 'DEST=/tmp/x; mkdir -p $DEST'` | `DEST` empty, `mkdir: missing operand` |
-| `node "\\wsl.localhost\Ubuntu\home\dev\run.mjs"` | `Cannot find module 'C:\wsl.localhost\Ubuntu\home\dev\run.mjs'` |
 
 ## Use it
 
@@ -72,14 +70,9 @@ The tool registers on Windows and inside WSL. It does nothing on macOS or native
 
 ## What this does not do
 
-These Win11 + WSL problems are real and stay out of scope.
+Pi's `read` tool can still return `EPERM` on `\\wsl.localhost\...`. Cat the file through this tool, or use a `C:\` path.
 
-- File watchers on `/mnt/c` (9p misses events). Copy onto the Linux disk and reload there.
-- Creating a Linux venv with Win32 Python. Create it in WSL.
-- Mixing a WSL `/tmp` file with Windows `gh`. Keep the git/gh chain in one WSL command.
-- Pi `read` on `\\wsl.localhost\...` returning `EPERM`. Use `wsl` `cat`, or a `C:\` path.
-
-For PowerShell, cmd, and a doctor, install [`@bacnh85/pi-windows-tools`](https://www.npmjs.com/package/@bacnh85/pi-windows-tools). pi-wsl stays a WSL runner.
+For PowerShell, cmd, and a doctor, install [`@bacnh85/pi-windows-tools`](https://www.npmjs.com/package/@bacnh85/pi-windows-tools).
 
 ## Config
 
