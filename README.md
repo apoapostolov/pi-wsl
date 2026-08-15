@@ -1,6 +1,8 @@
 # pi-wsl
 
-Pi on Windows runs its `bash` tool through Git Bash. Git Bash rewrites Linux paths and quote layers before WSL sees them. This extension spawn()s `wsl.exe` instead, so the command arrives intact.
+Pi's `bash` tool is Git Bash. You need Linux, `/mnt/c`, and `\\wsl.localhost` to arrive uncorrupted.
+
+This extension spawn()s `System32\wsl.exe` and runs the command in WSL. Git Bash never sees the text.
 
 0.2.0. Still a small tool. The surface can still move.
 
@@ -16,15 +18,17 @@ Start a new Pi process after install. `/reload` picks up the code; a pin change 
 
 ## Why this exists
 
-These fail when Pi's `bash` tool goes through Git Bash:
+On Windows, Pi's builtin `bash` tool is Git Bash (MSYS). MSYS rewrites Unix paths and strips quote layers before anything reaches WSL. A Linux path, a `/mnt/c` script, or a `\\wsl.localhost\...` file does not arrive as typed.
 
-| What you typed | What actually ran |
+Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it. That string still goes through Git Bash. `MSYS_NO_PATHCONV=1` only blocks some path rewrites. `$VARS` still vanish. Nested quotes still collapse. `\\wsl.localhost\Distro\home\dev\run.mjs` still becomes `C:\wsl.localhost\Distro\home\dev\run.mjs`, and Node dies `MODULE_NOT_FOUND`.
+
+This tool never goes through Git Bash. Node spawn()s `wsl.exe` and feeds bash inside the distro. Linux, `/mnt/c`, and `\\wsl.localhost` stay intact.
+
+| What you typed | What Git Bash actually ran |
 | --- | --- |
 | `python3 /mnt/c/proj/sync.py` | `python3 /mnt/c/Users/.../C:/Program Files/Git/mnt/c/proj/sync.py` |
 | `wsl -- bash -lc 'DEST=/tmp/x; mkdir -p $DEST'` | `DEST` empty, `mkdir: missing operand` |
 | `node "\\wsl.localhost\Ubuntu\home\dev\run.mjs"` | `Cannot find module 'C:\wsl.localhost\Ubuntu\home\dev\run.mjs'` |
-
-`MSYS_NO_PATHCONV=1` only helps some of those. Nested quotes and `$VARS` still die. This tool never goes through Git Bash, so none of those rewrites happen.
 
 ## Use it
 
@@ -32,7 +36,7 @@ Ask Pi to run the work in WSL, or call the tool:
 
 ```text
 command: node --check scripts/module.mjs
-cwd: C:\git-public\my-module
+cwd: C:\src\my-module
 ```
 
 ```text
@@ -69,12 +73,14 @@ The tool registers on Windows and inside WSL. It does nothing on macOS or native
 
 ## What this does not do
 
-These showed up while building Foundry modules on Win11 + WSL. They are real, and they stay out of this tool on purpose.
+Out of scope on purpose. These are real Win11 + WSL problems. They are not this tool.
 
 - File watchers on `/mnt/c` (9p misses events). Copy onto the Linux disk and reload there.
 - Creating a Linux venv with Win32 Python. Create it in WSL.
-- Mixing a WSL `/tmp` zip with Windows `gh`. Keep the git/gh chain in one WSL command.
+- Mixing a WSL `/tmp` file with Windows `gh`. Keep the git/gh chain in one WSL command.
 - Pi `read` on `\\wsl.localhost\...` returning `EPERM`. Use `wsl` `cat`, or a `C:\` path.
+
+This is not a Windows-native shell suite. For PowerShell, cmd, and a doctor, use [`@bacnh85/pi-windows-tools`](https://www.npmjs.com/package/@bacnh85/pi-windows-tools).
 
 ## Config
 
