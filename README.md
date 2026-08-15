@@ -21,8 +21,10 @@ Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it, because tha
 Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 
 ```bash
-pi install git:github.com/apoapostolov/pi-wsl@v0.2.1
+pi install npm:pi-wsl
 ```
+
+Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.2.1`.
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
 

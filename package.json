@@ -4,6 +4,9 @@
   "description": "Pi extension: run WSL commands without Git Bash rewriting /mnt/c, UNC, or $VARS",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Apostol Apostolov",
   "repository": {
     "type": "git",
