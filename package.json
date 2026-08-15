@@ -1,0 +1,44 @@
+{
+  "name": "pi-wsl",
+  "version": "0.1.0",
+  "description": "Pi extension: run WSL commands without Git Bash rewriting /mnt/c, UNC, or $VARS",
+  "type": "module",
+  "license": "MIT",
+  "author": "Apostol Apostolov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apoapostolov/pi-wsl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/apoapostolov/pi-wsl/issues"
+  },
+  "homepage": "https://github.com/apoapostolov/pi-wsl#readme",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "wsl",
+    "git-bash",
+    "msys",
+    "windows"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/lib.test.ts"
+  },
+  "exports": "./src/index.ts",
+  "pi": {
+    "extensions": [
+      "src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}
