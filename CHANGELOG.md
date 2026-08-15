@@ -2,6 +2,8 @@
 
 ## 0.2.1 - 2026-08-16
 
+npm package name is `@apoapostolov/pi-wsl`. Unscoped `pi-wsl` is blocked as too similar to `is-wsl`.
+
 ### Added
 
 - `/wsl distros` lists installed distros via the existing UTF-16LE `wsl -l` decoder. Also accepts `distro`, `list`, and `-l`
