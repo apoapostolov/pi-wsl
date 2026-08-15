@@ -2,14 +2,14 @@
 
 Pi on Windows runs its `bash` tool through Git Bash. Git Bash rewrites Linux paths and quote layers before WSL sees them. This extension spawn()s `wsl.exe` instead, so the command arrives intact.
 
-0.1.0 is a working first cut. The tool is usable. The surface will still move.
+0.2.0. Still a small tool. The surface can still move.
 
 ## Install
 
 Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 
 ```bash
-pi install git:github.com/apoapostolov/pi-wsl@v0.1.0
+pi install git:github.com/apoapostolov/pi-wsl@v0.2.0
 ```
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
@@ -54,11 +54,11 @@ Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localho
 | Field | Default | Notes |
 | --- | --- | --- |
 | `command` | | Raw bash. Mutually exclusive with `script` in practice |
-| `script` | | File to run. Windows, UNC, eaten UNC, or Linux path |
-| `args` | | Array (quoted) or one string. Array items that look like `C:\` or UNC are converted |
-| `cwd` | | Converted like `script` |
-| `timeout` | `60` | Seconds. Bump it for slow launches |
-| `distro` | WSL default | Or set `WSL_DISTRO` |
+| `script` | | File to run. Windows, Git Bash `/c/...`, UNC, eaten UNC, or Linux path |
+| `args` | | Array (quoted) or one string. Windows, UNC, and `/c/...` items are converted |
+| `cwd` | | Converted like `script`. A UNC cwd also selects that distro |
+| `timeout` | `60` | Seconds. Bump it for slow launches. Abort kills the WSL process tree |
+| `distro` | UNC, then `WSL_DISTRO`, then WSL default | Pass `distro` to force one |
 | `env` | | Extra variables inside WSL |
 | `input` | | Written to the command's stdin. Use for long JS |
 | `login` | `false` | `bash -l` |
@@ -91,7 +91,7 @@ Or pass `distro` on the tool call.
 npm test
 ```
 
-Tests cover path repair, wrapper unwrap, quoting, env, and the CRLF copy. They do not need WSL.
+Tests cover path repair, UNC distro pick, Git Bash `/c/` map, UTF-16LE `wsl -l`, quoting, env, and the CRLF copy. They do not need WSL.
 
 ## License
 

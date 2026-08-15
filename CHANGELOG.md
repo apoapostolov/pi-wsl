@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 - 2026-08-16
+
+Ideas taken from `@bacnh85/pi-windows-tools`, kept on the WSL job.
+
+### Added
+
+- Distro from a UNC cwd or script (`\\wsl.localhost\Debian\...` picks Debian). Explicit `distro` still wins, then UNC, then `WSL_DISTRO`
+- Git Bash `/c/foo` maps to `/mnt/c/foo`. `/dev` and `/home` stay Linux paths
+- `\\?\` long-path prefix is stripped
+- Timeout and abort kill the process tree with `taskkill /t /f`
+- Live `onUpdate` stream while the command runs
+- stdout and stderr stay separate in the result (`--- stdout ---` / `--- stderr ---`)
+- Invalid-distro errors list installed distros. `wsl -l` UTF-16LE is decoded
+
 ## 0.1.0 - 2026-08-16
 
 First public cut. Work in progress.

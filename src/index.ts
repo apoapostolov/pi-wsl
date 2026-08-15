@@ -3,13 +3,17 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	buildCommand,
-	clip,
 	DEFAULT_TIMEOUT_MS,
+	formatStreams,
 	inWsl,
+	killTree,
+	listInstalledDistros,
+	looksLikeMissingDistro,
 	resolveDistro,
 	shouldRegister,
 	toWslPath,
@@ -27,7 +31,7 @@ const parameters = Type.Object({
 	script: Type.Optional(
 		Type.String({
 			description:
-				"WSL or Windows path to a file to run. Accepts /home/..., /mnt/c/..., C:\\..., \\\\wsl.localhost\\..., and the Git-Bash-eaten C:\\wsl.localhost\\... form. Runner is node/python3/bash from the extension",
+				"WSL or Windows path to a file to run. Accepts /home/..., /mnt/c/..., /c/..., C:\\..., \\\\wsl.localhost\\..., and the Git-Bash-eaten C:\\wsl.localhost\\... form. Runner is node/python3/bash from the extension",
 		}),
 	),
 	args: Type.Optional(
@@ -42,7 +46,7 @@ const parameters = Type.Object({
 	),
 	cwd: Type.Optional(
 		Type.String({
-			description: "Working directory. Windows or Linux path. Converted to a WSL path",
+			description: "Working directory. Windows, Git Bash /c/..., UNC, or Linux path. Converted to a WSL path. UNC cwd also selects that distro",
 		}),
 	),
 	timeout: Type.Optional(
@@ -52,7 +56,8 @@ const parameters = Type.Object({
 	),
 	distro: Type.Optional(
 		Type.String({
-			description: "WSL distro name. Default: WSL_DISTRO env, else the user's default distro",
+			description:
+				"WSL distro name. Default: this call's UNC cwd/script, then WSL_DISTRO, else the user's default distro",
 		}),
 	),
 	env: Type.Optional(
@@ -96,6 +101,8 @@ type Params = {
 	crlf?: boolean;
 };
 
+type ChunkFn = (chunk: string, stream: "stdout" | "stderr") => void;
+
 function spawnFileAndArgs(
 	body: string,
 	cwd: string | undefined,
@@ -128,13 +135,15 @@ function runWsl(
 	params: Params,
 	timeoutMs: number,
 	signal?: AbortSignal,
+	onChunk?: ChunkFn,
 ): Promise<{
 	code: number | null;
 	stdout: string;
 	stderr: string;
 	killed: boolean;
+	distro: string | undefined;
 }> {
-	const distro = resolveDistro(params.distro);
+	const distro = resolveDistro(params.distro, { cwd: params.cwd, script: params.script });
 	const useStdinCommand = params.input == null;
 	const { file, args, spawnCwd } = spawnFileAndArgs(
 		body,
@@ -157,23 +166,28 @@ function runWsl(
 		let stdout = "";
 		let stderr = "";
 		let killed = false;
+		const stdoutDec = new StringDecoder("utf8");
+		const stderrDec = new StringDecoder("utf8");
 		const timer = setTimeout(() => {
 			killed = true;
-			child.kill("SIGTERM");
+			killTree(child);
 		}, timeoutMs);
 		const onAbort = () => {
 			killed = true;
-			child.kill("SIGTERM");
+			killTree(child);
 		};
 		if (signal && typeof signal.addEventListener === "function") {
 			signal.addEventListener("abort", onAbort, { once: true });
 		}
-		child.stdout?.on("data", (chunk) => {
-			stdout += String(chunk);
-		});
-		child.stderr?.on("data", (chunk) => {
-			stderr += String(chunk);
-		});
+		const take = (chunk: Buffer, decoder: StringDecoder, stream: "stdout" | "stderr") => {
+			const text = decoder.write(chunk);
+			if (!text) return;
+			if (stream === "stdout") stdout += text;
+			else stderr += text;
+			onChunk?.(text, stream);
+		};
+		child.stdout?.on("data", (chunk) => take(chunk, stdoutDec, "stdout"));
+		child.stderr?.on("data", (chunk) => take(chunk, stderrDec, "stderr"));
 		child.on("error", (err) => {
 			clearTimeout(timer);
 			signal?.removeEventListener("abort", onAbort);
@@ -182,7 +196,17 @@ function runWsl(
 		child.on("close", (code) => {
 			clearTimeout(timer);
 			signal?.removeEventListener("abort", onAbort);
-			resolve({ code, stdout, stderr, killed });
+			const outTail = stdoutDec.end();
+			const errTail = stderrDec.end();
+			if (outTail) {
+				stdout += outTail;
+				onChunk?.(outTail, "stdout");
+			}
+			if (errTail) {
+				stderr += errTail;
+				onChunk?.(errTail, "stderr");
+			}
+			resolve({ code, stdout, stderr, killed, distro });
 		});
 		const payload = useStdinCommand
 			? body.endsWith("\n")
@@ -192,6 +216,28 @@ function runWsl(
 		child.stdin?.write(payload);
 		child.stdin?.end();
 	});
+}
+
+function resultText(
+	result: { code: number | null; stdout: string; stderr: string; killed: boolean; distro?: string },
+	cwd: string | undefined,
+	timeoutMs: number,
+): { text: string; truncated: boolean } {
+	const streams = formatStreams(result.stdout, result.stderr);
+	let extra = "";
+	if (result.code !== 0 && looksLikeMissingDistro(result.stderr)) {
+		const listed = listInstalledDistros();
+		if (listed.length) extra = `\ninstalled distros: ${listed.join(", ")}`;
+	}
+	const header = [
+		result.killed ? `killed after ${timeoutMs}ms` : `exit ${result.code ?? "?"}`,
+		cwd ? `cwd ${toWslPath(cwd)}` : null,
+		result.distro ? `distro ${result.distro}` : "distro default",
+		streams.truncated ? "output truncated" : null,
+	]
+		.filter(Boolean)
+		.join(" | ");
+	return { text: `${header}\n${streams.text}${extra}`, truncated: streams.truncated };
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -211,29 +257,34 @@ export default function (pi: ExtensionAPI): void {
 			"systemctl --user needs the wsl tool userBus default, or login true. A non-login bash has no user D-Bus",
 		],
 		parameters,
-		async execute(_toolCallId, params: Params, signal) {
+		async execute(_toolCallId, params: Params, signal, onUpdate) {
 			const timeoutMs = Math.max(1, Number(params.timeout ?? DEFAULT_TIMEOUT_MS / 1000)) * 1000;
 			const cwd = params.cwd;
 			try {
 				const body = buildCommand(params);
-				const result = await runWsl(body, params, timeoutMs, signal);
-				const combined = [result.stdout, result.stderr].filter(Boolean).join("");
-				const clipped = clip(combined || "(no output)");
-				const header = [
-					result.killed ? `killed after ${timeoutMs}ms` : `exit ${result.code ?? "?"}`,
-					cwd ? `cwd ${toWslPath(cwd)}` : null,
-					resolveDistro(params.distro) ? `distro ${resolveDistro(params.distro)}` : "distro default",
-					clipped.truncated ? "output truncated" : null,
-				]
-					.filter(Boolean)
-					.join(" | ");
+				let preview = "";
+				let flushTimer: ReturnType<typeof setTimeout> | undefined;
+				const flush = () => {
+					flushTimer = undefined;
+					if (!onUpdate || !preview) return;
+					onUpdate({ content: [{ type: "text" as const, text: preview }], details: {} });
+				};
+				const result = await runWsl(body, params, timeoutMs, signal, (chunk) => {
+					preview += chunk;
+					if (!onUpdate) return;
+					if (!flushTimer) flushTimer = setTimeout(flush, 120);
+				});
+				if (flushTimer) clearTimeout(flushTimer);
+				const rendered = resultText(result, cwd, timeoutMs);
 				return {
-					content: [{ type: "text" as const, text: `${header}\n${clipped.text}` }],
+					content: [{ type: "text" as const, text: rendered.text }],
 					details: {
 						code: result.code,
 						killed: result.killed,
 						cwd: toWslPath(cwd),
-						distro: resolveDistro(params.distro) ?? null,
+						distro: result.distro ?? null,
+						stdout: result.stdout,
+						stderr: result.stderr,
 						unwrapped: body,
 					},
 					isError: result.killed || result.code !== 0,
@@ -258,14 +309,13 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 			try {
-				const result = await runWsl(command, { command, cwd: ctx.cwd }, DEFAULT_TIMEOUT_MS);
-				const clipped = clip(
-					[result.stdout, result.stderr].filter(Boolean).join("") || "(no output)",
+				const result = await runWsl(
+					command,
+					{ command, cwd: ctx.cwd },
+					DEFAULT_TIMEOUT_MS,
 				);
-				ctx.ui.notify(
-					`exit ${result.code ?? "?"}\n${clipped.text}`,
-					result.code === 0 ? "info" : "error",
-				);
+				const rendered = resultText(result, ctx.cwd, DEFAULT_TIMEOUT_MS);
+				ctx.ui.notify(rendered.text, result.code === 0 ? "info" : "error");
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");
 			}

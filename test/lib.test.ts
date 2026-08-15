@@ -4,10 +4,15 @@ import {
 	buildCommand,
 	convertArg,
 	formatArgs,
+	formatStreams,
 	looksLikeConvertiblePath,
+	looksLikeMissingDistro,
+	parseWslList,
+	parseWslUnc,
 	resolveDistro,
 	runnerFor,
 	shellQuote,
+	stripLongPathPrefix,
 	toForwardUnc,
 	toWslPath,
 	unwrapWslWrapper,
@@ -37,9 +42,44 @@ test("toWslPath repairs eaten UNC and real UNC", () => {
 	);
 });
 
-test("toWslPath leaves Linux paths alone", () => {
+test("toWslPath maps Git Bash /c/foo and strips \\\\?\\", () => {
+	assert.equal(toWslPath("/c/foo"), "/mnt/c/foo");
+	assert.equal(toWslPath("/c"), "/mnt/c");
+	assert.equal(toWslPath("\\\\?\\C:\\foo\\bar"), "/mnt/c/foo/bar");
+	assert.equal(toWslPath("/dev/foo"), "/dev/foo");
 	assert.equal(toWslPath("/home/dev/x"), "/home/dev/x");
 	assert.equal(toWslPath("/mnt/c/git-public/Foo"), "/mnt/c/git-public/Foo");
+});
+
+test("parseWslUnc keeps the distro name", () => {
+	assert.deepEqual(parseWslUnc("\\\\wsl.localhost\\Debian\\home\\dev"), {
+		distro: "Debian",
+		posixPath: "/home/dev",
+	});
+	assert.deepEqual(parseWslUnc("C:\\wsl.localhost\\Ubuntu-24.04\\tmp\\x"), {
+		distro: "Ubuntu-24.04",
+		posixPath: "/tmp/x",
+	});
+	assert.deepEqual(parseWslUnc("\\\\wsl.localhost\\Ubuntu"), {
+		distro: "Ubuntu",
+		posixPath: "/",
+	});
+	assert.equal(parseWslUnc("C:\\foo\\bar"), null);
+});
+
+test("resolveDistro prefers explicit, then UNC, then env", () => {
+	const prev = process.env.WSL_DISTRO;
+	process.env.WSL_DISTRO = "FedoraLinux-42";
+	assert.equal(resolveDistro("Debian"), "Debian");
+	assert.equal(
+		resolveDistro(undefined, { cwd: "\\\\wsl.localhost\\Ubuntu\\home\\dev" }),
+		"Ubuntu",
+	);
+	assert.equal(resolveDistro(undefined, { cwd: "C:\\git-public\\x" }), "FedoraLinux-42");
+	delete process.env.WSL_DISTRO;
+	assert.equal(resolveDistro(undefined, { cwd: "C:\\git-public\\x" }), undefined);
+	if (prev === undefined) delete process.env.WSL_DISTRO;
+	else process.env.WSL_DISTRO = prev;
 });
 
 test("toForwardUnc requires an explicit distro", () => {
@@ -61,32 +101,24 @@ test("unwrapWslWrapper strips Git Bash wrappers", () => {
 	assert.equal(unwrapWslWrapper("echo hi"), "echo hi");
 });
 
-test("formatArgs quotes array items and converts Windows paths", () => {
+test("formatArgs quotes array items and converts Windows and Git Bash paths", () => {
 	assert.equal(formatArgs(["--world", "demo"]), " '--world' 'demo'");
 	assert.equal(
 		formatArgs(["C:\\git-public\\mod\\dev\\probe.js"]),
 		" '/mnt/c/git-public/mod/dev/probe.js'",
 	);
+	assert.equal(formatArgs(["/c/git-public/mod/dev/probe.js"]), " '/mnt/c/git-public/mod/dev/probe.js'");
 	assert.equal(formatArgs(" --raw still-raw"), " --raw still-raw");
 });
 
 test("looksLikeConvertiblePath is conservative", () => {
 	assert.equal(looksLikeConvertiblePath("C:\\git\\x"), true);
+	assert.equal(looksLikeConvertiblePath("/c/foo"), true);
 	assert.equal(looksLikeConvertiblePath("JSON.stringify({has:1})"), false);
 	assert.equal(looksLikeConvertiblePath("1+1"), false);
+	assert.equal(looksLikeConvertiblePath("/home/dev"), false);
 	assert.equal(convertArg("C:/tmp/a.js"), "/mnt/c/tmp/a.js");
 	assert.equal(convertArg("--eval-file"), "--eval-file");
-});
-
-test("resolveDistro omits -d unless named", () => {
-	const prev = process.env.WSL_DISTRO;
-	delete process.env.WSL_DISTRO;
-	assert.equal(resolveDistro(undefined), undefined);
-	assert.equal(resolveDistro("Debian"), "Debian");
-	process.env.WSL_DISTRO = "FedoraLinux-42";
-	assert.equal(resolveDistro(undefined), "FedoraLinux-42");
-	if (prev === undefined) delete process.env.WSL_DISTRO;
-	else process.env.WSL_DISTRO = prev;
 });
 
 test("buildCommand copies script to /tmp and strips CR by default", () => {
@@ -130,4 +162,31 @@ test("buildCommand rejects bad env names", () => {
 
 test("shellQuote handles embedded quotes", () => {
 	assert.equal(shellQuote("it's"), `'it'\\''s'`);
+});
+
+test("formatStreams splits stdout and stderr", () => {
+	const both = formatStreams("hello\n", "warn\n");
+	assert.equal(both.text, "--- stdout ---\nhello\n\n--- stderr ---\nwarn\n");
+	assert.equal(formatStreams("only out", "").text, "--- stdout ---\nonly out");
+	assert.equal(formatStreams("", "").text, "(no output)");
+});
+
+test("parseWslList decodes UTF-16LE wsl -l output", () => {
+	const names = "Ubuntu-24.04\r\nDebian\r\n";
+	const utf16 = Buffer.from(`\ufeff${names}`, "utf16le");
+	assert.deepEqual(parseWslList(utf16), ["Ubuntu-24.04", "Debian"]);
+	assert.deepEqual(parseWslList("Ubuntu\nDebian\n"), ["Ubuntu", "Debian"]);
+});
+
+test("looksLikeMissingDistro matches wsl.exe wording", () => {
+	assert.equal(
+		looksLikeMissingDistro("There is no distribution with the supplied name."),
+		true,
+	);
+	assert.equal(looksLikeMissingDistro("exit 1: not found"), false);
+});
+
+test("stripLongPathPrefix", () => {
+	assert.equal(stripLongPathPrefix("//?/C:/foo"), "C:/foo");
+	assert.equal(stripLongPathPrefix("C:/foo"), "C:/foo");
 });

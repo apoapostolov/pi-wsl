@@ -6,19 +6,21 @@
  * C:\wsl.localhost\DISTRO\... (MODULE_NOT_FOUND). This package spawn()s
  * System32\wsl.exe so Git Bash never sees the text.
  */
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const MAX_CHARS = 50_000;
 export const MAX_LINES = 2000;
 
-/** Git Bash turns \\wsl.localhost\DISTRO\x into C:\wsl.localhost\DISTRO\x. */
-const EATEN_UNC = /^[A-Za-z]:\/wsl(?:\.localhost|\$)\/([^/]+)\/(.*)$/i;
-const UNC = /^\/\/wsl(?:\.localhost|\$)\/([^/]+)\/(.*)$/i;
+const EATEN_UNC = /^[A-Za-z]:\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
+const UNC = /^\/\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
 const DRIVE = /^([A-Za-z]):\/(.*)$/;
+const GIT_BASH_DRIVE = /^\/[a-z](?:\/|$)/i;
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export type WslArgs = string | string[];
+export type WslUnc = { distro: string; posixPath: string };
 
 export type BuildParams = {
 	command?: string;
@@ -34,6 +36,11 @@ export type BuildParams = {
 	crlf?: boolean;
 };
 
+export type DistroHints = {
+	cwd?: string;
+	script?: string;
+};
+
 export function inWsl(): boolean {
 	return Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
 }
@@ -46,31 +53,55 @@ export function wslExe(): string {
 	return join(process.env.SystemRoot || "C:\\Windows", "System32", "wsl.exe");
 }
 
-/** Named distro, or undefined to use the user's WSL default (omit -d). */
-export function resolveDistro(explicit?: string): string | undefined {
-	const named = explicit?.trim() || process.env.WSL_DISTRO?.trim();
-	return named || undefined;
+export function normalizeSlashes(input: string): string {
+	return stripLongPathPrefix(input.trim().replace(/\\/g, "/"));
 }
 
-function linuxFromUncRest(rest: string): string {
+/** \\?\C:\foo and //?/C:/foo → C:/foo */
+export function stripLongPathPrefix(p: string): string {
+	return p.replace(/^\/\/\?\/+/, "");
+}
+
+function linuxFromUncRest(rest: string | undefined): string {
+	if (!rest) return "/";
 	return `/${rest}`.replace(/\/{2,}/g, "/");
+}
+
+export function parseWslUnc(input: string | undefined): WslUnc | null {
+	if (!input) return null;
+	const p = normalizeSlashes(input);
+	const eaten = p.match(EATEN_UNC);
+	if (eaten) return { distro: eaten[1], posixPath: linuxFromUncRest(eaten[2]) };
+	const unc = p.match(UNC);
+	if (unc) return { distro: unc[1], posixPath: linuxFromUncRest(unc[2]) };
+	return null;
+}
+
+/** Named distro: explicit param, then UNC cwd/script, then WSL_DISTRO, else default. */
+export function resolveDistro(explicit?: string, hints?: DistroHints): string | undefined {
+	const named = explicit?.trim();
+	if (named) return named;
+	const fromPath = parseWslUnc(hints?.cwd) || parseWslUnc(hints?.script);
+	if (fromPath?.distro) return fromPath.distro;
+	return process.env.WSL_DISTRO?.trim() || undefined;
 }
 
 export function toWslPath(input: string | undefined): string | undefined {
 	if (!input) return undefined;
-	const p = input.trim().replace(/\\/g, "/");
-	const eaten = p.match(EATEN_UNC);
-	if (eaten) return linuxFromUncRest(eaten[2]);
-	const unc = p.match(UNC);
-	if (unc) return linuxFromUncRest(unc[2]);
+	const p = normalizeSlashes(input);
+	const unc = parseWslUnc(p);
+	if (unc) return unc.posixPath;
 	const drive = p.match(DRIVE);
 	if (drive) return `/mnt/${drive[1].toLowerCase()}/${drive[2]}`;
+	if (GIT_BASH_DRIVE.test(p) && !p.startsWith("/mnt/")) return `/mnt${p}`;
 	return p;
 }
 
 export function looksLikeConvertiblePath(value: string): boolean {
-	const p = value.trim().replace(/\\/g, "/");
-	return EATEN_UNC.test(p) || UNC.test(p) || DRIVE.test(p);
+	const p = normalizeSlashes(value);
+	return Boolean(
+		parseWslUnc(p) || DRIVE.test(p) || (GIT_BASH_DRIVE.test(p) && !p.startsWith("/mnt/")),
+	);
 }
 
 /** Forward-slash UNC. Safer than \\wsl.localhost if something still hits Git Bash. */
@@ -178,4 +209,66 @@ export function clip(text: string): { text: string; truncated: boolean } {
 		truncated = true;
 	}
 	return { text: out, truncated };
+}
+
+export function formatStreams(stdout: string, stderr: string): { text: string; truncated: boolean } {
+	const out = clip(stdout.replace(/\r\n/g, "\n"));
+	const err = clip(stderr.replace(/\r\n/g, "\n"));
+	const parts: string[] = [];
+	if (out.text) parts.push(`--- stdout ---\n${out.text}`);
+	if (err.text) parts.push(`--- stderr ---\n${err.text}`);
+	return {
+		text: parts.join("\n") || "(no output)",
+		truncated: out.truncated || err.truncated,
+	};
+}
+
+/** wsl.exe -l prints UTF-16LE on Windows. */
+export function parseWslList(output: Buffer | string): string[] {
+	const buffer = typeof output === "string" ? Buffer.from(output) : output;
+	const utf16 =
+		(buffer[0] === 0xff && buffer[1] === 0xfe) ||
+		buffer.subarray(1, Math.min(16, buffer.length)).some((byte) => byte === 0);
+	const text = utf16 ? buffer.toString("utf16le") : buffer.toString("utf8");
+	return text
+		.replace(/^\uFEFF/, "")
+		.split(/\r?\n/)
+		.map((s) => s.trim())
+		.filter((s) => s && !s.toLowerCase().includes("noinstall") && !s.startsWith("Windows"));
+}
+
+export function listInstalledDistros(): string[] {
+	try {
+		const out = execFileSync(wslExe(), ["-l", "-q"], {
+			timeout: 5000,
+			windowsHide: true,
+		});
+		return parseWslList(out);
+	} catch {
+		return [];
+	}
+}
+
+export function looksLikeMissingDistro(stderr: string): boolean {
+	return /there is no distribution|invalid distribution|does not exist/i.test(stderr);
+}
+
+/** Kill the WSL/bash tree. SIGTERM on wsl.exe can leave the inner bash. */
+export function killTree(child: ChildProcess): void {
+	if (process.platform === "win32" && child.pid && !inWsl()) {
+		spawn(join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"), [
+			"/pid",
+			String(child.pid),
+			"/t",
+			"/f",
+		], {
+			stdio: "ignore",
+			windowsHide: true,
+		}).unref();
+	}
+	try {
+		child.kill("SIGTERM");
+	} catch {
+		// already gone
+	}
 }
