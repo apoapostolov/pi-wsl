@@ -42,6 +42,21 @@ export function lastNonEmptyLines(text: string, n: number): string {
 	return lines.slice(-n).join("\n");
 }
 
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+export function spinnerFrame(now: number, intervalMs = 120): string {
+	const i = Math.floor(Math.max(0, now) / intervalMs) % SPINNER_FRAMES.length;
+	return SPINNER_FRAMES[i];
+}
+
+export function prefixOutputLines(text: string, glyph: string): string[] {
+	if (!text) return [];
+	return text
+		.replace(/\s+$/u, "")
+		.split(/\r?\n/)
+		.map((line) => (line.length ? `${glyph} ${line}` : glyph));
+}
+
 export function visibleLen(text: string): number {
 	return text.replace(/\x1b\[[0-9;]*m/g, "").length;
 }

@@ -3,11 +3,11 @@ import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	brandLabel,
 	formatDuration,
-	formatStreams,
 	isStalled,
-	lastNonEmptyLines,
 	nextStreamMode,
 	padRow,
+	prefixOutputLines,
+	spinnerFrame,
 	type StreamMode,
 	toWslPath,
 } from "./lib.ts";
@@ -91,8 +91,7 @@ export function buildStatusRow(
 	partial: boolean,
 	width: number,
 ): string {
-	const distro = details?.distro ?? args?.distro;
-	const brand = brandLabel(distro);
+	const brand = brandLabel(details?.distro ?? args?.distro);
 	const startedAt = details?.startedAt;
 	const lastChunkAt = details?.lastChunkAt ?? startedAt;
 	const endedAt = details?.endedAt;
@@ -111,8 +110,7 @@ export function buildStatusRow(
 		code: details?.code,
 		error: Boolean(details?.error),
 	});
-	const command = (details?.unwrapped || args?.command || args?.script || "").replace(/\s+/g, " ").trim();
-	const left = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}${command ? `  ${theme.fg("dim", command)}` : ""}`;
+	const left = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}`;
 	const right = [
 		theme.fg(tone, status),
 		elapsedMs != null ? theme.fg(stalled ? "warning" : "muted", formatDuration(elapsedMs)) : null,
@@ -122,12 +120,26 @@ export function buildStatusRow(
 	return padRow(left, right, Math.max(20, width));
 }
 
-function pickOutput(details: WslRenderDetails | undefined, mode: StreamMode): string {
+export function displayLines(
+	details: WslRenderDetails | undefined,
+	mode: StreamMode,
+	partial: boolean,
+	now: number,
+): string[] {
 	const stdout = details?.stdout ?? "";
 	const stderr = details?.stderr ?? "";
-	if (mode === "stdout") return stdout;
-	if (mode === "stderr") return stderr;
-	return formatStreams(stdout, stderr).text;
+	const lines: string[] = [];
+	if (mode === "stdout" || mode === "both") lines.push(...prefixOutputLines(stdout, ">"));
+	if (mode === "stderr" || mode === "both") lines.push(...prefixOutputLines(stderr, "!"));
+	if (lines.length === 0 && partial) lines.push(`> ${spinnerFrame(now)}`);
+	else if (partial && lines.length > 0) {
+		lines[lines.length - 1] = `${lines[lines.length - 1]} ${spinnerFrame(now)}`;
+	}
+	return lines;
+}
+
+function commandText(args: WslRenderArgs | undefined, details: WslRenderDetails | undefined): string {
+	return (details?.unwrapped || args?.command || args?.script || "").replace(/\s+/g, " ").trim();
 }
 
 export function renderWslCall(
@@ -156,7 +168,7 @@ export function renderWslResult(
 		state.startedAt = details.startedAt ?? Date.now();
 	}
 	if (options.isPartial && !state.interval) {
-		state.interval = setInterval(() => context.invalidate(), 1000);
+		state.interval = setInterval(() => context.invalidate(), 120);
 	}
 	if (!options.isPartial || context.isError) {
 		state.endedAt ??= details.endedAt ?? Date.now();
@@ -167,9 +179,6 @@ export function renderWslResult(
 	}
 
 	const mode = state.streamMode ?? "both";
-	const output =
-		pickOutput(details, mode) ||
-		(typeof result.content?.[0]?.text === "string" ? result.content[0].text : "");
 
 	return {
 		handleInput(data: string) {
@@ -199,16 +208,28 @@ export function renderWslResult(
 			}
 		},
 		render(width: number) {
+			const now = Date.now();
 			const merged = {
 				...details,
 				startedAt: details.startedAt ?? state.startedAt,
 				endedAt: details.endedAt ?? state.endedAt,
 			};
-			const row = buildStatusRow(context.args, merged, theme, Date.now(), options.isPartial, width);
-			const lines = [row];
-			const body = options.expanded ? output : lastNonEmptyLines(output, 3);
-			if (body) {
-				for (const line of body.split("\n")) lines.push(truncateToWidth(theme.fg("muted", line), width));
+			const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
+			let body = displayLines(details, mode, options.isPartial, now);
+			if (!options.expanded && body.length > 3) body = body.slice(-3);
+			const cmd = commandText(context.args, details);
+			const lines = [status];
+			body.forEach((line, i) => {
+				const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
+				const last = i === body.length - 1;
+				if (last && cmd) {
+					lines.push(padRow(painted, theme.fg("dim", cmd), width));
+				} else {
+					lines.push(truncateToWidth(painted, width));
+				}
+			});
+			if (body.length === 0 && cmd) {
+				lines.push(padRow("", theme.fg("dim", cmd), width));
 			}
 			const hints = [
 				`${rawKeyHint("s", mode)}`,

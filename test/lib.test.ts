@@ -31,6 +31,9 @@ import {
 	brandLabel,
 	padRow,
 	visibleLen,
+	prefixOutputLines,
+	spinnerFrame,
+	SPINNER_FRAMES,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -268,6 +271,9 @@ test("elapsed and stall helpers", () => {
 	assert.equal(visibleLen(row), 24);
 	assert.match(row, /left/);
 	assert.match(row, /exit 0/);
+	assert.deepEqual(prefixOutputLines("a\nb", ">"), ["> a", "> b"]);
+	assert.ok(SPINNER_FRAMES.includes(spinnerFrame(0) as (typeof SPINNER_FRAMES)[number]));
+	assert.notEqual(spinnerFrame(0), spinnerFrame(120));
 });
 
 test("pathInterceptReason only flags UNC and /mnt", () => {

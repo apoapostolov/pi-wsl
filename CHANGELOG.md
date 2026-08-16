@@ -10,7 +10,8 @@ Still in progress. Not a new minor.
 - If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir> &&`.
 - First call wakes the distro with `wsl.exe -- true` so a cold start does not eat the whole timeout.
 - `/wsl path <p>` prints the mapped Linux path.
-- TUI row inside the green box: icon + bold WSL (or the distro name when set) + command on the left, exit and elapsed time on the right.
+- TUI row inside the green box: icon + bold WSL (or the distro name when set) on the left, exit and elapsed time on the right.
+- Output uses `>` (stderr `!`) with a braille spinner while running. The command is dim and right-aligned on the last output or waiting line.
 - Yellow when no output arrives for 15s (`PI_WSL_STALL_WARN` in seconds). Red on fail, timeout, or kill.
 - Expanded result: `s` cycles stdout / stderr / both, `c` copies the unwrapped command, `p` copies the mapped cwd.
 
