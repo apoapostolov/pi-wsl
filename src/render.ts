@@ -146,10 +146,6 @@ export function displayLines(
 	return lines;
 }
 
-function commandText(args: WslRenderArgs | undefined, details: WslRenderDetails | undefined): string {
-	return displayCommand(args, details?.unwrapped);
-}
-
 export function renderWslCall(
 	_args: WslRenderArgs | undefined,
 	_theme: Theme,
@@ -225,30 +221,29 @@ export function renderWslResult(
 			const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
 			let body = displayLines(details, mode, options.isPartial, now);
 			if (!options.expanded && body.length > 3) body = body.slice(-3);
-			const cmd = commandText(context.args, details);
 			const inner = Math.max(20, width - 1);
-			const cmdRight = ellipsize(cmd, Math.min(48, Math.max(8, Math.floor(inner * 0.4))));
+			const hints = theme.fg(
+				"dim",
+				[
+					`${rawKeyHint("s", mode)}`,
+					`${rawKeyHint("c", "copy cmd")}`,
+					`${rawKeyHint("p", "copy cwd")}`,
+					!options.expanded ? keyHint("app.tools.expand", "expand") : null,
+					state.copied ? theme.fg("success", `copied ${state.copied}`) : null,
+				]
+					.filter(Boolean)
+					.join("  "),
+			);
 			const lines = [status];
-			body.forEach((line, i) => {
-				const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
-				const last = i === body.length - 1;
-				if (last && cmdRight) {
-					lines.push(padRow(painted, theme.fg("dim", cmdRight), inner));
-				} else {
-					lines.push(truncateToWidth(painted, inner));
-				}
-			});
-			if (body.length === 0 && cmdRight) {
-				lines.push(padRow(">", theme.fg("dim", cmdRight), inner));
+			if (body.length === 0) {
+				lines.push(padRow(theme.fg("muted", ">"), hints, inner));
+			} else {
+				body.forEach((line, i) => {
+					const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
+					if (i === body.length - 1) lines.push(padRow(painted, hints, inner));
+					else lines.push(truncateToWidth(painted, inner));
+				});
 			}
-			const hints = [
-				`${rawKeyHint("s", mode)}`,
-				`${rawKeyHint("c", "copy cmd")}`,
-				`${rawKeyHint("p", "copy cwd")}`,
-				!options.expanded ? keyHint("app.tools.expand", "expand") : null,
-				state.copied ? theme.fg("success", `copied ${state.copied}`) : null,
-			].filter(Boolean);
-			lines.push(truncateToWidth(theme.fg("dim", hints.join("  ")), width));
 			return lines;
 		},
 		invalidate() {},
