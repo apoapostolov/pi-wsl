@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Drop the dead `s` / `c` / `p` hints. The last `>` line keeps an `[expand]` / `[close]` chip. Pi's expand key still toggles it.
+
 ## 0.3.3 - 2026-08-16
 
 - When the row is stalled or killed, the icon and WSL/distro mark use that warning or error color.

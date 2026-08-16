@@ -1,5 +1,4 @@
-import { copyToClipboard, keyHint, rawKeyHint } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	brandLabel,
 	brandTone,
@@ -7,12 +6,9 @@ import {
 	ellipsize,
 	formatDuration,
 	isStalled,
-	nextStreamMode,
 	padRow,
 	prefixOutputLines,
 	spinnerFrame,
-	type StreamMode,
-	toWslPath,
 	visibleLen,
 } from "./lib.ts";
 
@@ -41,13 +37,12 @@ export type WslRenderState = {
 	startedAt?: number;
 	endedAt?: number;
 	interval?: ReturnType<typeof setInterval>;
-	streamMode?: StreamMode;
-	copied?: string;
 };
 
 type Theme = {
 	fg: (name: string, text: string) => string;
 	bold: (text: string) => string;
+	bg?: (name: string, text: string) => string;
 };
 
 type CallContext = {
@@ -130,17 +125,22 @@ export function buildStatusRow(
 	return padRow(left, right, inner);
 }
 
+export function expandButton(theme: Theme, expanded: boolean): string {
+	const label = expanded ? " close " : " expand ";
+	if (theme.bg) return theme.bg("accent", theme.fg("accent", label));
+	return theme.fg("accent", expanded ? "[close]" : "[expand]");
+}
+
 export function displayLines(
 	details: WslRenderDetails | undefined,
-	mode: StreamMode,
 	partial: boolean,
 	now: number,
 ): string[] {
 	const stdout = details?.stdout ?? "";
 	const stderr = details?.stderr ?? "";
 	const lines: string[] = [];
-	if (mode === "stdout" || mode === "both") lines.push(...prefixOutputLines(stdout, ">"));
-	if (mode === "stderr" || mode === "both") lines.push(...prefixOutputLines(stderr, "!"));
+	lines.push(...prefixOutputLines(stdout, ">"));
+	lines.push(...prefixOutputLines(stderr, "!"));
 	if (lines.length === 0 && partial) lines.push(`> ${spinnerFrame(now)}`);
 	else if (partial && lines.length > 0) {
 		lines[lines.length - 1] = `${lines[lines.length - 1]} ${spinnerFrame(now)}`;
@@ -184,35 +184,7 @@ export function renderWslResult(
 		}
 	}
 
-	const mode = state.streamMode ?? "both";
-
 	return {
-		handleInput(data: string) {
-			if (matchesKey(data, "s")) {
-				state.streamMode = nextStreamMode(mode);
-				context.invalidate();
-				return;
-			}
-			if (matchesKey(data, "c")) {
-				const text = details.unwrapped || context.args?.command || context.args?.script || "";
-				if (text) {
-					void copyToClipboard(text).then(() => {
-						state.copied = "command";
-						context.invalidate();
-					});
-				}
-				return;
-			}
-			if (matchesKey(data, "p")) {
-				const text = details.cwd || (context.args?.cwd ? toWslPath(context.args.cwd) : "") || "";
-				if (text) {
-					void copyToClipboard(text).then(() => {
-						state.copied = "path";
-						context.invalidate();
-					});
-				}
-			}
-		},
 		render(width: number) {
 			const now = Date.now();
 			const merged = {
@@ -221,28 +193,17 @@ export function renderWslResult(
 				endedAt: details.endedAt ?? state.endedAt,
 			};
 			const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
-			let body = displayLines(details, mode, options.isPartial, now);
+			let body = displayLines(details, options.isPartial, now);
 			if (!options.expanded && body.length > 3) body = body.slice(-3);
 			const inner = Math.max(20, width - 1);
-			const hints = theme.fg(
-				"dim",
-				[
-					`${rawKeyHint("s", mode)}`,
-					`${rawKeyHint("c", "copy cmd")}`,
-					`${rawKeyHint("p", "copy cwd")}`,
-					!options.expanded ? keyHint("app.tools.expand", "expand") : null,
-					state.copied ? theme.fg("success", `copied ${state.copied}`) : null,
-				]
-					.filter(Boolean)
-					.join("  "),
-			);
+			const button = expandButton(theme, options.expanded);
 			const lines = [status];
 			if (body.length === 0) {
-				lines.push(padRow(theme.fg("muted", ">"), hints, inner));
+				lines.push(padRow(theme.fg("muted", ">"), button, inner));
 			} else {
 				body.forEach((line, i) => {
 					const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
-					if (i === body.length - 1) lines.push(padRow(painted, hints, inner));
+					if (i === body.length - 1) lines.push(padRow(painted, button, inner));
 					else lines.push(truncateToWidth(painted, inner));
 				});
 			}

@@ -57,7 +57,7 @@ On Win11, if the model still calls builtin `bash` with those paths, pi-wsl block
 
 Drive-letter cwd and script paths go through `wslpath -u` when WSL is up. A first call wakes the distro. If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir>`.
 
-The TUI row keeps the green tool box. Top line: icon and bold **WSL** (or **Debian** when that distro is set) on the left, exit and elapsed time on the right. Output uses `>` (stderr `!`) instead of a stdout banner. While it runs, a braille spinner sits on that `>` line. The hint bar (`s` / `c` / `p` / expand) is dim and right-aligned on the last `>` line. After 15s with no output the time turns yellow (`PI_WSL_STALL_WARN`). On an expanded row, `s` cycles streams, `c` copies the command, and `p` copies the mapped cwd.
+The TUI row keeps the green tool box. Top line: icon and bold **WSL** (or **Debian** when that distro is set) plus the command on the left, exit and elapsed time on the right. Output uses `>` (stderr `!`) instead of a stdout banner. While it runs, a braille spinner sits on that `>` line. An `[expand]` / `[close]` chip sits on the last `>` line. After 15s with no output the time and mark turn yellow (`PI_WSL_STALL_WARN`).
 
 ## Options
 
