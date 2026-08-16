@@ -34,6 +34,8 @@ import {
 	prefixOutputLines,
 	spinnerFrame,
 	SPINNER_FRAMES,
+	displayCommand,
+	ellipsize,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -274,6 +276,15 @@ test("elapsed and stall helpers", () => {
 	assert.deepEqual(prefixOutputLines("a\nb", ">"), ["> a", "> b"]);
 	assert.ok(SPINNER_FRAMES.includes(spinnerFrame(0) as (typeof SPINNER_FRAMES)[number]));
 	assert.notEqual(spinnerFrame(0), spinnerFrame(120));
+	assert.equal(ellipsize("abcdef", 4), "abc…");
+	assert.equal(
+		displayCommand({ command: "sleep 10" }, "export XDG_RUNTIME_DIR='x'; export DBUS_SESSION_BUS_ADDRESS='y'; sleep 10"),
+		"sleep 10",
+	);
+	assert.equal(
+		displayCommand(undefined, "export XDG_RUNTIME_DIR='x'; export FOO='1'; sleep 10"),
+		"sleep 10",
+	);
 });
 
 test("pathInterceptReason only flags UNC and /mnt", () => {

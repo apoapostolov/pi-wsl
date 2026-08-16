@@ -2,6 +2,8 @@ import { copyToClipboard, keyHint, rawKeyHint } from "@earendil-works/pi-coding-
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	brandLabel,
+	displayCommand,
+	ellipsize,
 	formatDuration,
 	isStalled,
 	nextStreamMode,
@@ -10,6 +12,7 @@ import {
 	spinnerFrame,
 	type StreamMode,
 	toWslPath,
+	visibleLen,
 } from "./lib.ts";
 
 export type WslRenderArgs = {
@@ -110,14 +113,19 @@ export function buildStatusRow(
 		code: details?.code,
 		error: Boolean(details?.error),
 	});
-	const left = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}`;
+	const mark = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}`;
 	const right = [
 		theme.fg(tone, status),
 		elapsedMs != null ? theme.fg(stalled ? "warning" : "muted", formatDuration(elapsedMs)) : null,
 	]
 		.filter(Boolean)
 		.join("  ");
-	return padRow(left, right, Math.max(20, width));
+	const cmd = displayCommand(args, details?.unwrapped);
+	const inner = Math.max(20, width - 1);
+	const cmdBudget = Math.max(0, inner - visibleLen(mark) - visibleLen(right) - 2);
+	const shown = ellipsize(cmd, cmdBudget);
+	const left = shown ? `${mark}  ${theme.fg("dim", shown)}` : mark;
+	return padRow(left, right, inner);
 }
 
 export function displayLines(
@@ -139,7 +147,7 @@ export function displayLines(
 }
 
 function commandText(args: WslRenderArgs | undefined, details: WslRenderDetails | undefined): string {
-	return (details?.unwrapped || args?.command || args?.script || "").replace(/\s+/g, " ").trim();
+	return displayCommand(args, details?.unwrapped);
 }
 
 export function renderWslCall(
@@ -218,18 +226,20 @@ export function renderWslResult(
 			let body = displayLines(details, mode, options.isPartial, now);
 			if (!options.expanded && body.length > 3) body = body.slice(-3);
 			const cmd = commandText(context.args, details);
+			const inner = Math.max(20, width - 1);
+			const cmdRight = ellipsize(cmd, Math.min(48, Math.max(8, Math.floor(inner * 0.4))));
 			const lines = [status];
 			body.forEach((line, i) => {
 				const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
 				const last = i === body.length - 1;
-				if (last && cmd) {
-					lines.push(padRow(painted, theme.fg("dim", cmd), width));
+				if (last && cmdRight) {
+					lines.push(padRow(painted, theme.fg("dim", cmdRight), inner));
 				} else {
-					lines.push(truncateToWidth(painted, width));
+					lines.push(truncateToWidth(painted, inner));
 				}
 			});
-			if (body.length === 0 && cmd) {
-				lines.push(padRow("", theme.fg("dim", cmd), width));
+			if (body.length === 0 && cmdRight) {
+				lines.push(padRow(">", theme.fg("dim", cmdRight), inner));
 			}
 			const hints = [
 				`${rawKeyHint("s", mode)}`,

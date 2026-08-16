@@ -42,6 +42,27 @@ export function lastNonEmptyLines(text: string, n: number): string {
 	return lines.slice(-n).join("\n");
 }
 
+export function ellipsize(text: string, max: number): string {
+	if (max <= 0) return "";
+	const chars = [...text];
+	if (chars.length <= max) return text;
+	if (max === 1) return "…";
+	return `${chars.slice(0, max - 1).join("")}…`;
+}
+
+/** User-facing command. Never the export-prefixed unwrapped body. */
+export function displayCommand(
+	args?: { command?: string; script?: string },
+	unwrapped?: string,
+): string {
+	const raw = (args?.command || args?.script || "").replace(/\s+/g, " ").trim();
+	if (raw) return raw;
+	return (unwrapped || "")
+		.replace(/\s+/g, " ")
+		.replace(/^(export [A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+);\s*)+/g, "")
+		.trim();
+}
+
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 export function spinnerFrame(now: number, intervalMs = 120): string {
