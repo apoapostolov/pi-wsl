@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 - 2026-08-16
+
+- Publish the README with LF line endings so npmjs.com renders it. Windows CRLF made the site show an empty README.
+
 ## 0.3.4 - 2026-08-16
 
 - Drop the dead `s` / `c` / `p` hints and the expand/close chip. The last `>` line is output only.
