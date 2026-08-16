@@ -1,13 +1,8 @@
 # Changelog
 
-## Unreleased
-
-- Drop the expand/close chip. It did not receive clicks. The last `>` line is output only.
-
 ## 0.3.4 - 2026-08-16
 
-- Drop the dead `s` / `c` / `p` hints. The last `>` line keeps an `[expand]` / `[close]` chip. Pi's expand key still toggles it.
-- The chip uses `selectedBg`, not `theme.bg("accent")`. `accent` is foreground-only. The old call threw `Unknown theme background color: accent` and killed Win11 Pi with `uncaughtException`.
+- Drop the dead `s` / `c` / `p` hints and the expand/close chip. The last `>` line is output only.
 - A thrown theme color in the custom renderer now prints an error line instead of taking down the TUI.
 
 ## 0.3.3 - 2026-08-16
