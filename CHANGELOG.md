@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Drop the expand/close chip. It did not receive clicks. The last `>` line is output only.
+
 ## 0.3.4 - 2026-08-16
 
 - Drop the dead `s` / `c` / `p` hints. The last `>` line keeps an `[expand]` / `[close]` chip. Pi's expand key still toggles it.
