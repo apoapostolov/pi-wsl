@@ -29,6 +29,7 @@ import {
 	nextStreamMode,
 	lastNonEmptyLines,
 	brandLabel,
+	brandTone,
 	padRow,
 	visibleLen,
 	prefixOutputLines,
@@ -269,6 +270,10 @@ test("elapsed and stall helpers", () => {
 	assert.equal(brandLabel(null), "WSL");
 	assert.equal(brandLabel("default"), "WSL");
 	assert.equal(brandLabel("Debian"), "Debian");
+	assert.equal(brandTone({}), "toolTitle");
+	assert.equal(brandTone({ stalled: true }), "warning");
+	assert.equal(brandTone({ killed: true }), "error");
+	assert.equal(brandTone({ stalled: true, killed: true }), "error");
 	const row = padRow("left", "exit 0  1.2s", 24);
 	assert.equal(visibleLen(row), 24);
 	assert.match(row, /left/);

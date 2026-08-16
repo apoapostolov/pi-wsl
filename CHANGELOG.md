@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- When the row is stalled or killed, the icon and WSL/distro mark use that warning or error color.
+
 ## 0.3.2 - 2026-08-16
 
 ### Added

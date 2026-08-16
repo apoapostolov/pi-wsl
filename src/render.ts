@@ -2,6 +2,7 @@ import { copyToClipboard, keyHint, rawKeyHint } from "@earendil-works/pi-coding-
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	brandLabel,
+	brandTone,
 	displayCommand,
 	ellipsize,
 	formatDuration,
@@ -113,7 +114,8 @@ export function buildStatusRow(
 		code: details?.code,
 		error: Boolean(details?.error),
 	});
-	const mark = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}`;
+	const markColor = brandTone({ stalled, killed: details?.killed });
+	const mark = `${theme.fg(markColor, "⬢")} ${theme.bold(theme.fg(markColor, brand))}`;
 	const right = [
 		theme.fg(tone, status),
 		elapsedMs != null ? theme.fg(stalled ? "warning" : "muted", formatDuration(elapsedMs)) : null,

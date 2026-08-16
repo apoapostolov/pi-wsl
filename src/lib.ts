@@ -88,6 +88,13 @@ export function brandLabel(distro?: string | null): string {
 	return "WSL";
 }
 
+/** Icon and distro mark follow stall/kill color. Running and success stay the title tone. */
+export function brandTone(opts: { stalled?: boolean; killed?: boolean }): "warning" | "error" | "toolTitle" {
+	if (opts.killed) return "error";
+	if (opts.stalled) return "warning";
+	return "toolTitle";
+}
+
 export function padRow(left: string, right: string, width: number): string {
 	const gap = width - visibleLen(left) - visibleLen(right);
 	if (gap >= 1) return `${left}${" ".repeat(gap)}${right}`;
