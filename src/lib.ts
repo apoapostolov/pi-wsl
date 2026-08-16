@@ -12,6 +12,35 @@ import { join } from "node:path";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const MAX_CHARS = 50_000;
 export const MAX_LINES = 2000;
+export const STALL_WARN_MS = 15_000;
+
+export type StreamMode = "both" | "stdout" | "stderr";
+
+export function stallWarnMs(): number {
+	const raw = Number(process.env.PI_WSL_STALL_WARN);
+	if (Number.isFinite(raw) && raw > 0) return raw * 1000;
+	return STALL_WARN_MS;
+}
+
+export function formatDuration(ms: number): string {
+	return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+}
+
+export function isStalled(lastChunkAt: number | undefined, now: number, warnMs = stallWarnMs()): boolean {
+	if (lastChunkAt == null) return false;
+	return now - lastChunkAt >= warnMs;
+}
+
+export function nextStreamMode(mode: StreamMode): StreamMode {
+	if (mode === "both") return "stdout";
+	if (mode === "stdout") return "stderr";
+	return "both";
+}
+
+export function lastNonEmptyLines(text: string, n: number): string {
+	const lines = text.replace(/\s+$/u, "").split(/\r?\n/).filter((line) => line.length > 0);
+	return lines.slice(-n).join("\n");
+}
 
 const EATEN_UNC = /^[A-Za-z]:\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
 const UNC = /^\/\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;

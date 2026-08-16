@@ -24,6 +24,10 @@ import {
 	parsePathQuery,
 	toWindowsPathForWslpath,
 	withCdPrefix,
+	formatDuration,
+	isStalled,
+	nextStreamMode,
+	lastNonEmptyLines,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -243,6 +247,16 @@ test("parsePathQuery handles /wsl path", () => {
 	assert.deepEqual(parsePathQuery("path"), { kind: "path-usage" });
 	assert.equal(parsePathQuery("uname -a"), null);
 	assert.equal(parsePathQuery("pathfind"), null);
+});
+
+test("elapsed and stall helpers", () => {
+	assert.equal(formatDuration(1200), "1.2s");
+	assert.equal(isStalled(0, 14_999, 15_000), false);
+	assert.equal(isStalled(0, 15_000, 15_000), true);
+	assert.equal(nextStreamMode("both"), "stdout");
+	assert.equal(nextStreamMode("stdout"), "stderr");
+	assert.equal(nextStreamMode("stderr"), "both");
+	assert.equal(lastNonEmptyLines("a\n\nb\nc\n", 2), "b\nc");
 });
 
 test("pathInterceptReason only flags UNC and /mnt", () => {

@@ -30,6 +30,7 @@ import {
 	wslExe,
 	wslSupportsCd,
 } from "./lib.ts";
+import { renderWslCall, renderWslResult, type WslRenderState } from "./render.ts";
 
 const parameters = Type.Object({
 	command: Type.Optional(
@@ -296,22 +297,47 @@ export default function (pi: ExtensionAPI): void {
 		async execute(_toolCallId, params: Params, signal, onUpdate) {
 			const timeoutMs = Math.max(1, Number(params.timeout ?? DEFAULT_TIMEOUT_MS / 1000)) * 1000;
 			const cwd = params.cwd;
+			const startedAt = Date.now();
+			let lastChunkAt = startedAt;
 			try {
 				const body = buildCommand(params);
-				let preview = "";
+				let liveStdout = "";
+				let liveStderr = "";
 				let flushTimer: ReturnType<typeof setTimeout> | undefined;
+				const liveDetails = () => ({
+					cwd: toWslPath(cwd),
+					distro: resolveDistro(params.distro, { cwd: params.cwd, script: params.script }) ?? null,
+					stdout: liveStdout,
+					stderr: liveStderr,
+					unwrapped: body,
+					startedAt,
+					lastChunkAt,
+				});
 				const flush = () => {
 					flushTimer = undefined;
-					if (!onUpdate || !preview) return;
-					onUpdate({ content: [{ type: "text" as const, text: preview }], details: {} });
+					if (!onUpdate) return;
+					onUpdate({
+						content: [{ type: "text" as const, text: resultText({
+							code: null,
+							stdout: liveStdout,
+							stderr: liveStderr,
+							killed: false,
+							distro: liveDetails().distro ?? undefined,
+						}, cwd, timeoutMs).text }],
+						details: liveDetails(),
+					});
 				};
-				const result = await runWsl(body, params, timeoutMs, signal, (chunk) => {
-					preview += chunk;
+				onUpdate?.({ content: [{ type: "text" as const, text: "" }], details: liveDetails() });
+				const result = await runWsl(body, params, timeoutMs, signal, (chunk, stream) => {
+					lastChunkAt = Date.now();
+					if (stream === "stdout") liveStdout += chunk;
+					else liveStderr += chunk;
 					if (!onUpdate) return;
 					if (!flushTimer) flushTimer = setTimeout(flush, 120);
 				});
 				if (flushTimer) clearTimeout(flushTimer);
 				const rendered = resultText(result, cwd, timeoutMs);
+				const endedAt = Date.now();
 				return {
 					content: [{ type: "text" as const, text: rendered.text }],
 					details: {
@@ -322,6 +348,9 @@ export default function (pi: ExtensionAPI): void {
 						stdout: result.stdout,
 						stderr: result.stderr,
 						unwrapped: body,
+						startedAt,
+						lastChunkAt,
+						endedAt,
 					},
 					isError: result.killed || result.code !== 0,
 				};
@@ -329,10 +358,21 @@ export default function (pi: ExtensionAPI): void {
 				const message = err instanceof Error ? err.message : String(err);
 				return {
 					content: [{ type: "text" as const, text: `wsl tool failed: ${message}` }],
-					details: { error: message },
+					details: { error: message, startedAt, lastChunkAt, endedAt: Date.now() },
 					isError: true,
 				};
 			}
+		},
+		renderCall(args, theme, context) {
+			return renderWslCall(args as Params, theme, context as WslRenderState & typeof context);
+		},
+		renderResult(result, options, theme, context) {
+			return renderWslResult(
+				result as { details?: import("./render.ts").WslRenderDetails; content?: Array<{ type: string; text?: string }> },
+				options,
+				theme,
+				context as typeof context & { state: WslRenderState; args?: Params },
+			);
 		},
 	});
 

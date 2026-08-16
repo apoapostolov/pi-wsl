@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 - 2026-08-16
+
+### Added
+
+- TUI status strip: distro, cwd, running/stalled/exit, elapsed time
+- Yellow when no output arrives for 15s (`PI_WSL_STALL_WARN` in seconds). Red on fail, timeout, or kill
+- Expanded result: `s` cycles stdout / stderr / both, `c` copies the unwrapped command, `p` copies the mapped cwd
+
 ## 0.3.1 - 2026-08-16
 
 ### Added
