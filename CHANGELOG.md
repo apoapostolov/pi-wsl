@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 - 2026-08-16
+
+### Added
+
+- On Win11 (not inside WSL), block builtin `bash` when the command would be rewritten by Git Bash (`/mnt/<drive>`, `\\wsl.localhost`, eaten UNC, `wsl -d`, `MSYS_NO_PATHCONV`, `/home/`). The reason tells the model to call the `wsl` tool with the raw command. Does not re-run the command.
+- Same intercept for `read` / `write` / `edit` on WSL UNC or `/mnt/<drive>` paths.
+- Set `PI_WSL_NO_INTERCEPT=true` to turn the hook off.
+
 ## 0.2.1 - 2026-08-16
 
 npm package name is `@apoapostolov/pi-wsl`. Unscoped `pi-wsl` is blocked as too similar to `is-wsl`.

@@ -7,15 +7,18 @@ import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
+	bashInterceptReason,
 	buildCommand,
 	DEFAULT_TIMEOUT_MS,
 	formatDistrosList,
 	formatStreams,
+	interceptEnabled,
 	inWsl,
 	isDistrosAlias,
 	killTree,
 	listInstalledDistros,
 	looksLikeMissingDistro,
+	pathInterceptReason,
 	resolveDistro,
 	shouldRegister,
 	toWslPath,
@@ -244,6 +247,27 @@ function resultText(
 
 export default function (pi: ExtensionAPI): void {
 	if (!shouldRegister()) return;
+
+	if (process.platform === "win32" && !inWsl() && interceptEnabled()) {
+		pi.on("tool_call", (event) => {
+			if (event.toolName === "wsl") return;
+			const input = event.input as { command?: unknown; cwd?: unknown; path?: unknown };
+			if (event.toolName === "bash" && typeof input.command === "string") {
+				const reason = bashInterceptReason(
+					input.command,
+					typeof input.cwd === "string" ? input.cwd : undefined,
+				);
+				if (reason) return { block: true, reason };
+			}
+			if (
+				(event.toolName === "read" || event.toolName === "write" || event.toolName === "edit") &&
+				typeof input.path === "string"
+			) {
+				const reason = pathInterceptReason(input.path);
+				if (reason) return { block: true, reason };
+			}
+		});
+	}
 
 	pi.registerTool({
 		name: "wsl",

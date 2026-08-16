@@ -18,6 +18,9 @@ import {
 	toForwardUnc,
 	toWslPath,
 	unwrapWslWrapper,
+	bashInterceptReason,
+	findRewriteRisk,
+	pathInterceptReason,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -201,4 +204,28 @@ test("looksLikeMissingDistro matches wsl.exe wording", () => {
 test("stripLongPathPrefix", () => {
 	assert.equal(stripLongPathPrefix("//?/C:/foo"), "C:/foo");
 	assert.equal(stripLongPathPrefix("C:/foo"), "C:/foo");
+});
+
+test("findRewriteRisk catches Git Bash rewrite bait and ignores ordinary Windows bash", () => {
+	assert.equal(findRewriteRisk("python3 /mnt/c/proj/sync.py"), "/mnt/<drive>");
+	assert.equal(findRewriteRisk('node "\\\\wsl.localhost\\Ubuntu\\home\\dev\\run.mjs"'), "\\\\wsl.localhost");
+	assert.equal(findRewriteRisk("wsl -d Ubuntu-24.04 -- bash -lc 'true'"), "wsl.exe");
+	assert.equal(findRewriteRisk("MSYS_NO_PATHCONV=1 wsl -- true"), "MSYS_NO_PATHCONV");
+	assert.equal(findRewriteRisk("cat /home/dev/x"), "/home/");
+	assert.equal(findRewriteRisk("git status"), null);
+	assert.equal(findRewriteRisk("ls /c/Users/theap"), null);
+	assert.equal(findRewriteRisk("npm test"), null);
+});
+
+test("bashInterceptReason names the wsl tool", () => {
+	const reason = bashInterceptReason("python3 /mnt/c/proj/sync.py");
+	assert.match(reason ?? "", /wsl tool/);
+	assert.equal(bashInterceptReason("git status"), null);
+});
+
+test("pathInterceptReason only flags UNC and /mnt", () => {
+	assert.match(pathInterceptReason("\\\\wsl.localhost\\Ubuntu\\home\\dev\\a.ts") ?? "", /WSL UNC/);
+	assert.match(pathInterceptReason("/mnt/c/proj/a.ts") ?? "", /\/mnt\//);
+	assert.equal(pathInterceptReason("C:\\src\\a.ts"), null);
+	assert.equal(pathInterceptReason("/home/dev/a.ts"), null);
 });

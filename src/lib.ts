@@ -261,6 +261,41 @@ export function looksLikeMissingDistro(stderr: string): boolean {
 	return /there is no distribution|invalid distribution|does not exist/i.test(stderr);
 }
 
+export function interceptEnabled(): boolean {
+	return process.env.PI_WSL_NO_INTERCEPT !== "true";
+}
+
+/** Label of a Git Bash rewrite risk in free text, or null. */
+export function findRewriteRisk(text: string | undefined): string | null {
+	if (!text) return null;
+	const n = text.replace(/\\/g, "/");
+	if (/MSYS_NO_PATHCONV/i.test(text)) return "MSYS_NO_PATHCONV";
+	if (/wsl(?:\.localhost|\$)/i.test(n)) return "\\\\wsl.localhost";
+	if (/[A-Za-z]:\/wsl/i.test(n)) return "C:\\\\wsl.localhost";
+	if (/(?:^|[\s;|&])wsl(?:\.exe)?\s+(?:-d|--cd|--(?:\s|$))/i.test(text)) return "wsl.exe";
+	if (/\/mnt\/[a-zA-Z](?:\/|$)/.test(n)) return "/mnt/<drive>";
+	if (/(?:^|[\s"'`=])\/home\//.test(n)) return "/home/";
+	return null;
+}
+
+export function bashInterceptReason(command: string, cwd?: string): string | null {
+	const hit = findRewriteRisk(command) || findRewriteRisk(cwd);
+	if (!hit) return null;
+	return `Git Bash will rewrite ${hit}. Call the wsl tool with the raw command, and do not wrap it in wsl -d or bash -lc.`;
+}
+
+export function pathInterceptReason(path: string | undefined): string | null {
+	if (!path) return null;
+	const n = path.replace(/\\/g, "/");
+	if (/wsl(?:\.localhost|\$)/i.test(n) || /[A-Za-z]:\/wsl/i.test(n)) {
+		return "This path is a WSL UNC. Use the wsl tool to cat or write it, or pass a C:\\ path to read/write/edit.";
+	}
+	if (/\/mnt\/[a-zA-Z](?:\/|$)/.test(n)) {
+		return "This path is /mnt/<drive>. Use the wsl tool, or pass a C:\\ path to read/write/edit.";
+	}
+	return null;
+}
+
 /** Kill the WSL/bash tree. SIGTERM on wsl.exe can leave the inner bash. */
 export function killTree(child: ChildProcess): void {
 	if (process.platform === "win32" && child.pid && !inWsl()) {

@@ -24,7 +24,7 @@ Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 pi install npm:@apoapostolov/pi-wsl
 ```
 
-Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.2.1`.
+Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.3.0`.
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
 
@@ -51,6 +51,8 @@ Human shortcuts:
 ```
 
 Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localhost`. Pass the raw command, and do not wrap it in `wsl -d` or `bash -lc`.
+
+On Win11, if the model still calls builtin `bash` with those paths, pi-wsl blocks the call and tells it to use this tool. It does not re-run the command through Git Bash. The same hook blocks `read` / `write` / `edit` on `\\wsl.localhost` and `/mnt/<drive>`. Set `PI_WSL_NO_INTERCEPT=true` to disable it.
 
 ## Options
 
