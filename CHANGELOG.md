@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - 2026-08-16
+
+### Changed
+
+- Tool chrome is one line: icon + bold WSL (or the distro name when set) + command on the left, exit and elapsed time on the right. Drops the default green WSL stamp.
+
 ## 0.4.0 - 2026-08-16
 
 ### Added

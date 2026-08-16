@@ -28,6 +28,9 @@ import {
 	isStalled,
 	nextStreamMode,
 	lastNonEmptyLines,
+	brandLabel,
+	padRow,
+	visibleLen,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -257,6 +260,14 @@ test("elapsed and stall helpers", () => {
 	assert.equal(nextStreamMode("stdout"), "stderr");
 	assert.equal(nextStreamMode("stderr"), "both");
 	assert.equal(lastNonEmptyLines("a\n\nb\nc\n", 2), "b\nc");
+	assert.equal(brandLabel(undefined), "WSL");
+	assert.equal(brandLabel(null), "WSL");
+	assert.equal(brandLabel("default"), "WSL");
+	assert.equal(brandLabel("Debian"), "Debian");
+	const row = padRow("left", "exit 0  1.2s", 24);
+	assert.equal(visibleLen(row), 24);
+	assert.match(row, /left/);
+	assert.match(row, /exit 0/);
 });
 
 test("pathInterceptReason only flags UNC and /mnt", () => {

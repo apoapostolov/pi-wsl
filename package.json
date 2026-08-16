@@ -1,6 +1,6 @@
 {
   "name": "@apoapostolov/pi-wsl",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pi extension: run WSL commands without Git Bash rewriting /mnt/c, UNC, or $VARS",
   "type": "module",
   "license": "MIT",

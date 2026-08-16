@@ -283,6 +283,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "wsl",
 		label: "WSL",
+		renderShell: "self",
 		description:
 			"Run a command in WSL by spawn()ing wsl.exe. Prefer this over bash for Linux paths, /mnt/c, and \\\\wsl.localhost. Git Bash rewrites those and breaks node/python. Pass command, or script plus args. Do not wrap in wsl -d or bash -lc",
 		promptSnippet: "Run Linux in WSL without Git Bash rewriting /mnt/c, UNC, or $VARS",

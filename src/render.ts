@@ -1,11 +1,13 @@
 import { copyToClipboard, keyHint, rawKeyHint } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
+	brandLabel,
 	formatDuration,
 	formatStreams,
 	isStalled,
 	lastNonEmptyLines,
 	nextStreamMode,
+	padRow,
 	type StreamMode,
 	toWslPath,
 } from "./lib.ts";
@@ -46,7 +48,6 @@ type Theme = {
 
 type CallContext = {
 	state: WslRenderState;
-	lastComponent?: { setText: (text: string) => void };
 	executionStarted?: boolean;
 	isPartial?: boolean;
 	isError?: boolean;
@@ -55,14 +56,7 @@ type CallContext = {
 
 type ResultContext = CallContext & {
 	args?: WslRenderArgs;
-	expanded?: boolean;
-	showImages?: boolean;
 };
-
-function clipCmd(text: string, width: number): string {
-	if (text.length <= width) return text;
-	return `${text.slice(0, Math.max(0, width - 1))}…`;
-}
 
 export function headerTone(opts: {
 	partial?: boolean;
@@ -89,15 +83,16 @@ export function headerStatus(opts: {
 	return `exit ${opts.code}`;
 }
 
-export function buildHeaderText(
+export function buildStatusRow(
 	args: WslRenderArgs | undefined,
 	details: WslRenderDetails | undefined,
 	theme: Theme,
 	now: number,
 	partial: boolean,
+	width: number,
 ): string {
-	const distro = details?.distro || args?.distro || "default";
-	const cwd = details?.cwd || (args?.cwd ? toWslPath(args.cwd) : undefined);
+	const distro = details?.distro ?? args?.distro;
+	const brand = brandLabel(distro);
 	const startedAt = details?.startedAt;
 	const lastChunkAt = details?.lastChunkAt ?? startedAt;
 	const endedAt = details?.endedAt;
@@ -116,16 +111,15 @@ export function buildHeaderText(
 		code: details?.code,
 		error: Boolean(details?.error),
 	});
-	const bits = [
-		theme.bold(theme.fg("toolTitle", "⬢ WSL")),
-		theme.fg("muted", String(distro)),
-		cwd ? theme.fg("dim", cwd) : null,
+	const command = (details?.unwrapped || args?.command || args?.script || "").replace(/\s+/g, " ").trim();
+	const left = `${theme.fg("toolTitle", "⬢")} ${theme.bold(theme.fg("toolTitle", brand))}${command ? `  ${theme.fg("dim", command)}` : ""}`;
+	const right = [
 		theme.fg(tone, status),
 		elapsedMs != null ? theme.fg(stalled ? "warning" : "muted", formatDuration(elapsedMs)) : null,
-	].filter(Boolean);
-	const command = details?.unwrapped || args?.command || args?.script || "";
-	const cmdLine = command ? theme.fg("dim", clipCmd(command.replace(/\s+/g, " "), 120)) : "";
-	return cmdLine ? `${bits.join("  ")}\n${cmdLine}` : bits.join("  ");
+	]
+		.filter(Boolean)
+		.join("  ");
+	return padRow(left, right, Math.max(20, width));
 }
 
 function pickOutput(details: WslRenderDetails | undefined, mode: StreamMode): string {
@@ -137,18 +131,17 @@ function pickOutput(details: WslRenderDetails | undefined, mode: StreamMode): st
 }
 
 export function renderWslCall(
-	args: WslRenderArgs | undefined,
-	theme: Theme,
+	_args: WslRenderArgs | undefined,
+	_theme: Theme,
 	context: CallContext,
-): { setText: (text: string) => void } {
-	const state = context.state;
-	if (context.executionStarted && state.startedAt === undefined) {
-		state.startedAt = Date.now();
+): { render: (width: number) => string[]; invalidate: () => void } {
+	if (context.executionStarted && context.state.startedAt === undefined) {
+		context.state.startedAt = Date.now();
 	}
-	const command = args?.command || args?.script || "...";
-	const text = (context.lastComponent as { setText: (t: string) => void } | undefined) ?? new Text("", 0, 0);
-	text.setText(`${theme.bold(theme.fg("toolTitle", "⬢ WSL"))}  ${theme.fg("dim", clipCmd(command.replace(/\s+/g, " "), 100))}`);
-	return text;
+	return {
+		render: () => [],
+		invalidate() {},
+	};
 }
 
 export function renderWslResult(
@@ -174,10 +167,11 @@ export function renderWslResult(
 	}
 
 	const mode = state.streamMode ?? "both";
-	const output = pickOutput(details, mode) || (typeof result.content?.[0]?.text === "string" ? result.content[0].text : "");
-	const header = buildHeaderText(context.args, { ...details, startedAt: details.startedAt ?? state.startedAt, endedAt: details.endedAt ?? state.endedAt }, theme, Date.now(), options.isPartial);
+	const output =
+		pickOutput(details, mode) ||
+		(typeof result.content?.[0]?.text === "string" ? result.content[0].text : "");
 
-	const component = {
+	return {
 		handleInput(data: string) {
 			if (matchesKey(data, "s")) {
 				state.streamMode = nextStreamMode(mode);
@@ -205,9 +199,13 @@ export function renderWslResult(
 			}
 		},
 		render(width: number) {
-			const lines: string[] = [truncateToWidth(header.split("\n")[0] ?? "", width)];
-			const cmd = header.split("\n")[1];
-			if (cmd) lines.push(truncateToWidth(cmd, width));
+			const merged = {
+				...details,
+				startedAt: details.startedAt ?? state.startedAt,
+				endedAt: details.endedAt ?? state.endedAt,
+			};
+			const row = buildStatusRow(context.args, merged, theme, Date.now(), options.isPartial, width);
+			const lines = [row];
 			const body = options.expanded ? output : lastNonEmptyLines(output, 3);
 			if (body) {
 				for (const line of body.split("\n")) lines.push(truncateToWidth(theme.fg("muted", line), width));
@@ -224,5 +222,4 @@ export function renderWslResult(
 		},
 		invalidate() {},
 	};
-	return component;
 }

@@ -42,6 +42,25 @@ export function lastNonEmptyLines(text: string, n: number): string {
 	return lines.slice(-n).join("\n");
 }
 
+export function visibleLen(text: string): number {
+	return text.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+/** Named distro replaces the WSL mark. Unset or "default" stays WSL. */
+export function brandLabel(distro?: string | null): string {
+	if (distro && distro !== "default") return distro;
+	return "WSL";
+}
+
+export function padRow(left: string, right: string, width: number): string {
+	const gap = width - visibleLen(left) - visibleLen(right);
+	if (gap >= 1) return `${left}${" ".repeat(gap)}${right}`;
+	const budget = Math.max(0, width - visibleLen(right) - 1);
+	let clipped = left;
+	while (visibleLen(clipped) > budget && clipped.length > 0) clipped = clipped.slice(0, -1);
+	return budget > 0 ? `${clipped} ${right}`.trimEnd() : right.slice(0, Math.max(0, width));
+}
+
 const EATEN_UNC = /^[A-Za-z]:\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
 const UNC = /^\/\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
 const DRIVE = /^([A-Za-z]):\/(.*)$/;
