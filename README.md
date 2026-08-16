@@ -24,7 +24,7 @@ Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 pi install npm:@apoapostolov/pi-wsl
 ```
 
-Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.4.2`.
+Git install still works: `pi install git:github.com/apoapostolov/pi-wsl`.
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
 

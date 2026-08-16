@@ -1,26 +1,8 @@
 # Changelog
 
-## 0.4.2 - 2026-08-16
-
-### Changed
-
-- Restores the default green tool box. The one-line header still sits inside it.
-
-## 0.4.1 - 2026-08-16
-
-### Changed
-
-- Tool chrome is one line: icon + bold WSL (or the distro name when set) + command on the left, exit and elapsed time on the right. Drops the default green WSL stamp.
-
-## 0.4.0 - 2026-08-16
-
-### Added
-
-- TUI status strip: distro, cwd, running/stalled/exit, elapsed time
-- Yellow when no output arrives for 15s (`PI_WSL_STALL_WARN` in seconds). Red on fail, timeout, or kill
-- Expanded result: `s` cycles stdout / stderr / both, `c` copies the unwrapped command, `p` copies the mapped cwd
-
 ## 0.3.1 - 2026-08-16
+
+Still in progress. Not a new minor.
 
 ### Added
 
@@ -28,6 +10,9 @@
 - If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir> &&`.
 - First call wakes the distro with `wsl.exe -- true` so a cold start does not eat the whole timeout.
 - `/wsl path <p>` prints the mapped Linux path.
+- TUI row inside the green box: icon + bold WSL (or the distro name when set) + command on the left, exit and elapsed time on the right.
+- Yellow when no output arrives for 15s (`PI_WSL_STALL_WARN` in seconds). Red on fail, timeout, or kill.
+- Expanded result: `s` cycles stdout / stderr / both, `c` copies the unwrapped command, `p` copies the mapped cwd.
 
 ## 0.3.0 - 2026-08-16
 
