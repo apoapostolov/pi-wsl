@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 - 2026-08-16
+
+### Changed
+
+- Restores the default green tool box. The one-line header still sits inside it.
+
 ## 0.4.1 - 2026-08-16
 
 ### Changed

@@ -24,7 +24,7 @@ Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
 pi install npm:@apoapostolov/pi-wsl
 ```
 
-Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.4.1`.
+Git install still works: `pi install git:github.com/apoapostolov/pi-wsl@v0.4.2`.
 
 Start a new Pi process after install. `/reload` picks up the code; a pin change needs a restart.
 
@@ -57,7 +57,7 @@ On Win11, if the model still calls builtin `bash` with those paths, pi-wsl block
 
 Drive-letter cwd and script paths go through `wslpath -u` when WSL is up. A first call wakes the distro. If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir>`.
 
-The TUI row is one line: icon and bold **WSL** (or **Debian** when that distro is set), then the command on the left, exit and elapsed time on the right. After 15s with no output the time turns yellow (`PI_WSL_STALL_WARN`). On an expanded row, `s` cycles streams, `c` copies the command, and `p` copies the mapped cwd.
+The TUI row keeps the green tool box. Inside it, one line: icon and bold **WSL** (or **Debian** when that distro is set), then the command on the left, exit and elapsed time on the right. After 15s with no output the time turns yellow (`PI_WSL_STALL_WARN`). On an expanded row, `s` cycles streams, `c` copies the command, and `p` copies the mapped cwd.
 
 ## Options
 
