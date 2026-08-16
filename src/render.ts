@@ -125,10 +125,18 @@ export function buildStatusRow(
 	return padRow(left, right, inner);
 }
 
+const CHIP_BG = "selectedBg";
+
+/** Chip on the last output line. accent is fg-only; theme.bg("accent") kills Pi. */
 export function expandButton(theme: Theme, expanded: boolean): string {
 	const label = expanded ? " close " : " expand ";
-	if (theme.bg) return theme.bg("accent", theme.fg("accent", label));
-	return theme.fg("accent", expanded ? "[close]" : "[expand]");
+	const fallback = theme.fg("accent", expanded ? "[close]" : "[expand]");
+	if (!theme.bg) return fallback;
+	try {
+		return theme.bg(CHIP_BG, theme.fg("accent", label));
+	} catch {
+		return fallback;
+	}
 }
 
 export function displayLines(
@@ -186,28 +194,33 @@ export function renderWslResult(
 
 	return {
 		render(width: number) {
-			const now = Date.now();
-			const merged = {
-				...details,
-				startedAt: details.startedAt ?? state.startedAt,
-				endedAt: details.endedAt ?? state.endedAt,
-			};
-			const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
-			let body = displayLines(details, options.isPartial, now);
-			if (!options.expanded && body.length > 3) body = body.slice(-3);
-			const inner = Math.max(20, width - 1);
-			const button = expandButton(theme, options.expanded);
-			const lines = [status];
-			if (body.length === 0) {
-				lines.push(padRow(theme.fg("muted", ">"), button, inner));
-			} else {
-				body.forEach((line, i) => {
-					const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
-					if (i === body.length - 1) lines.push(padRow(painted, button, inner));
-					else lines.push(truncateToWidth(painted, inner));
-				});
+			try {
+				const now = Date.now();
+				const merged = {
+					...details,
+					startedAt: details.startedAt ?? state.startedAt,
+					endedAt: details.endedAt ?? state.endedAt,
+				};
+				const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
+				let body = displayLines(details, options.isPartial, now);
+				if (!options.expanded && body.length > 3) body = body.slice(-3);
+				const inner = Math.max(20, width - 1);
+				const button = expandButton(theme, options.expanded);
+				const lines = [status];
+				if (body.length === 0) {
+					lines.push(padRow(theme.fg("muted", ">"), button, inner));
+				} else {
+					body.forEach((line, i) => {
+						const painted = theme.fg(line.startsWith("!") ? "warning" : "muted", line);
+						if (i === body.length - 1) lines.push(padRow(painted, button, inner));
+						else lines.push(truncateToWidth(painted, inner));
+					});
+				}
+				return lines;
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				return [theme.fg("error", `wsl render failed: ${msg}`)];
 			}
-			return lines;
 		},
 		invalidate() {},
 	};

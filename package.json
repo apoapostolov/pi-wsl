@@ -1,6 +1,6 @@
 {
   "name": "@apoapostolov/pi-wsl",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Pi extension: run WSL commands without Git Bash rewriting /mnt/c, UNC, or $VARS",
   "type": "module",
   "license": "MIT",
@@ -32,7 +32,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --experimental-strip-types --test test/lib.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "exports": "./src/index.ts",
   "pi": {
