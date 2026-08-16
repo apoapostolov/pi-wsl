@@ -21,6 +21,9 @@ import {
 	bashInterceptReason,
 	findRewriteRisk,
 	pathInterceptReason,
+	parsePathQuery,
+	toWindowsPathForWslpath,
+	withCdPrefix,
 } from "../src/lib.ts";
 
 test("toWslPath converts drive letters", () => {
@@ -221,6 +224,25 @@ test("bashInterceptReason names the wsl tool", () => {
 	const reason = bashInterceptReason("python3 /mnt/c/proj/sync.py");
 	assert.match(reason ?? "", /wsl tool/);
 	assert.equal(bashInterceptReason("git status"), null);
+});
+
+test("toWindowsPathForWslpath only converts drive and Git Bash /c", () => {
+	assert.equal(toWindowsPathForWslpath("C:\\Users\\me"), "C:\\Users\\me");
+	assert.equal(toWindowsPathForWslpath("/c/Users/me"), "C:\\Users\\me");
+	assert.equal(toWindowsPathForWslpath("/home/dev"), undefined);
+	assert.equal(toWindowsPathForWslpath("\\\\wsl.localhost\\Ubuntu\\home"), undefined);
+});
+
+test("withCdPrefix wraps the body", () => {
+	assert.equal(withCdPrefix("true", undefined), "true");
+	assert.match(withCdPrefix("uname -a", "/mnt/c/src"), /cd -- '\/mnt\/c\/src' &&/);
+});
+
+test("parsePathQuery handles /wsl path", () => {
+	assert.deepEqual(parsePathQuery("path C:\\foo"), { kind: "path", input: "C:\\foo" });
+	assert.deepEqual(parsePathQuery("path"), { kind: "path-usage" });
+	assert.equal(parsePathQuery("uname -a"), null);
+	assert.equal(parsePathQuery("pathfind"), null);
 });
 
 test("pathInterceptReason only flags UNC and /mnt", () => {

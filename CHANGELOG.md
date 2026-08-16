@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 - 2026-08-16
+
+### Added
+
+- Drive-letter paths go through `wslpath -u` when WSL is up, so a custom `automount.root` still maps. Linux and UNC paths stay on the local mapper.
+- If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir> &&`.
+- First call wakes the distro with `wsl.exe -- true` so a cold start does not eat the whole timeout.
+- `/wsl path <p>` prints the mapped Linux path.
+
 ## 0.3.0 - 2026-08-16
 
 ### Added

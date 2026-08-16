@@ -97,6 +97,92 @@ export function toWslPath(input: string | undefined): string | undefined {
 	return p;
 }
 
+/** Windows path for wslpath -u. Drive letters and Git Bash /c/foo only. */
+export function toWindowsPathForWslpath(input: string): string | undefined {
+	const p = normalizeSlashes(input);
+	if (parseWslUnc(p)) return undefined;
+	const drive = p.match(DRIVE);
+	if (drive) return `${drive[1].toUpperCase()}:\\${drive[2].replace(/\//g, "\\")}`;
+	const git = p.match(/^\/([a-z])(?:\/(.*))?$/i);
+	if (git && !p.startsWith("/mnt/")) {
+		return `${git[1].toUpperCase()}:\\${(git[2] || "").replace(/\//g, "\\")}`;
+	}
+	return undefined;
+}
+
+export function wslpathUnix(windowsPath: string, distro?: string): string | undefined {
+	try {
+		const out = execFileSync(
+			wslExe(),
+			[...(distro ? ["-d", distro] : []), "--", "wslpath", "-u", windowsPath],
+			{ timeout: 8000, windowsHide: true, encoding: "utf8" },
+		);
+		const line = String(out).trim().split(/\r?\n/)[0]?.trim();
+		return line || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Like toWslPath, but drive letters go through wslpath -u when WSL is up. */
+export function toWslPathLive(input: string | undefined, distro?: string): string | undefined {
+	const mapped = toWslPath(input);
+	if (!input || !mapped) return mapped;
+	const windows = toWindowsPathForWslpath(input);
+	if (!windows) return mapped;
+	return wslpathUnix(windows, distro) || mapped;
+}
+
+export function withCdPrefix(body: string, linuxCwd: string | undefined): string {
+	if (!linuxCwd) return body;
+	return `cd -- ${shellQuote(linuxCwd)} && { ${body}\n}`;
+}
+
+let cdProbe: boolean | undefined;
+export function wslSupportsCd(distro?: string): boolean {
+	if (inWsl()) return false;
+	if (cdProbe !== undefined) return cdProbe;
+	try {
+		execFileSync(
+			wslExe(),
+			[...(distro ? ["-d", distro] : []), "--cd", "/tmp", "--", "true"],
+			{ timeout: 20000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
+		);
+		cdProbe = true;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (looksLikeMissingDistro(msg)) {
+			cdProbe = true;
+		} else {
+			cdProbe = !/--cd|unknown argument|invalid option/i.test(msg);
+		}
+	}
+	return cdProbe;
+}
+
+let wokeDistro = false;
+export function wakeDistro(distro?: string): void {
+	if (wokeDistro || inWsl()) return;
+	wokeDistro = true;
+	try {
+		execFileSync(wslExe(), [...(distro ? ["-d", distro] : []), "--", "true"], {
+			timeout: 20000,
+			windowsHide: true,
+			stdio: "ignore",
+		});
+	} catch {
+		// the real command will surface the error
+	}
+}
+
+export function parsePathQuery(args: string): { kind: "path"; input: string } | { kind: "path-usage" } | null {
+	const m = args.trim().match(/^path(?:\s+(.+))?$/i);
+	if (!m) return null;
+	const input = m[1]?.trim();
+	if (!input) return { kind: "path-usage" };
+	return { kind: "path", input };
+}
+
 export function looksLikeConvertiblePath(value: string): boolean {
 	const p = normalizeSlashes(value);
 	return Boolean(

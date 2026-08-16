@@ -18,12 +18,17 @@ import {
 	killTree,
 	listInstalledDistros,
 	looksLikeMissingDistro,
+	parsePathQuery,
 	pathInterceptReason,
 	resolveDistro,
 	shouldRegister,
 	toWslPath,
+	toWslPathLive,
 	type WslArgs,
+	wakeDistro,
+	withCdPrefix,
 	wslExe,
+	wslSupportsCd,
 } from "./lib.ts";
 
 const parameters = Type.Object({
@@ -110,12 +115,12 @@ type ChunkFn = (chunk: string, stream: "stdout" | "stderr") => void;
 
 function spawnFileAndArgs(
 	body: string,
-	cwd: string | undefined,
+	linuxCwd: string | undefined,
 	distro: string | undefined,
 	login: boolean,
 	useStdinCommand: boolean,
+	useCdFlag: boolean,
 ): { file: string; args: string[]; spawnCwd?: string } {
-	const linuxCwd = toWslPath(cwd);
 	const bashFlags = login ? ["-l"] : [];
 	if (inWsl()) {
 		return {
@@ -126,7 +131,7 @@ function spawnFileAndArgs(
 	}
 	const args = [
 		...(distro ? ["-d", distro] : []),
-		...(linuxCwd ? ["--cd", linuxCwd] : []),
+		...(useCdFlag && linuxCwd ? ["--cd", linuxCwd] : []),
 		"--",
 		"bash",
 		...bashFlags,
@@ -149,13 +154,18 @@ function runWsl(
 	distro: string | undefined;
 }> {
 	const distro = resolveDistro(params.distro, { cwd: params.cwd, script: params.script });
+	wakeDistro(distro);
+	const linuxCwd = toWslPathLive(params.cwd, distro);
+	const useCdFlag = Boolean(linuxCwd) && !inWsl() && wslSupportsCd(distro);
+	const runBody = useCdFlag || inWsl() ? body : withCdPrefix(body, linuxCwd);
 	const useStdinCommand = params.input == null;
 	const { file, args, spawnCwd } = spawnFileAndArgs(
-		body,
-		params.cwd,
+		runBody,
+		linuxCwd,
 		distro,
 		Boolean(params.login),
 		useStdinCommand,
+		useCdFlag,
 	);
 
 	return new Promise((resolve, reject) => {
@@ -214,9 +224,9 @@ function runWsl(
 			resolve({ code, stdout, stderr, killed, distro });
 		});
 		const payload = useStdinCommand
-			? body.endsWith("\n")
-				? body
-				: `${body}\n`
+			? runBody.endsWith("\n")
+				? runBody
+				: `${runBody}\n`
 			: params.input ?? "";
 		child.stdin?.write(payload);
 		child.stdin?.end();
@@ -327,16 +337,26 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("wsl", {
-		description: "Run a one-liner in WSL, or /wsl distros to list distros",
+		description: "Run a one-liner in WSL, or /wsl distros / /wsl path <p>",
 		handler: async (args, ctx) => {
 			const command = args.trim();
 			if (!command) {
-				ctx.ui.notify("Usage: /wsl <command>  |  /wsl distros", "error");
+				ctx.ui.notify("Usage: /wsl <command>  |  /wsl distros  |  /wsl path <p>", "error");
 				return;
 			}
 			if (isDistrosAlias(command)) {
 				const listed = listInstalledDistros();
 				ctx.ui.notify(formatDistrosList(listed), listed.length ? "info" : "error");
+				return;
+			}
+			const pathQuery = parsePathQuery(command);
+			if (pathQuery?.kind === "path-usage") {
+				ctx.ui.notify("Usage: /wsl path <windows-or-unc-or-linux-path>", "error");
+				return;
+			}
+			if (pathQuery?.kind === "path") {
+				const mapped = toWslPathLive(pathQuery.input);
+				ctx.ui.notify(mapped ?? pathQuery.input, "info");
 				return;
 			}
 			try {
