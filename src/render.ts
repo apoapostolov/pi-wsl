@@ -1,3 +1,4 @@
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	brandLabel,
 	brandTone,
@@ -117,11 +118,11 @@ export function buildStatusRow(
 		.filter(Boolean)
 		.join("  ");
 	const cmd = displayCommand(args, details?.unwrapped);
-	const inner = Math.max(20, width - 1);
+	const inner = Math.max(0, width - 1);
 	const cmdBudget = Math.max(0, inner - visibleLen(mark) - visibleLen(right) - 2);
 	const shown = ellipsize(cmd, cmdBudget);
 	const left = shown ? `${mark}  ${theme.fg("dim", shown)}` : mark;
-	return padRow(left, right, inner);
+	return truncateToWidth(padRow(left, right, inner), inner, "");
 }
 
 export function displayLines(
@@ -189,7 +190,7 @@ export function renderWslResult(
 				const status = buildStatusRow(context.args, merged, theme, now, options.isPartial, width);
 				let body = displayLines(details, options.isPartial, now);
 				if (!options.expanded && body.length > 3) body = body.slice(-3);
-				const inner = Math.max(20, width - 1);
+				const inner = Math.max(0, width - 1);
 				const lines = [status];
 				if (body.length === 0) {
 					lines.push(theme.fg("muted", ">"));
