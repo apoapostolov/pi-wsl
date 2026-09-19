@@ -258,6 +258,18 @@ test("parsePathQuery handles /wsl path", () => {
 	assert.equal(parsePathQuery("pathfind"), null);
 });
 
+test("visible width and truncation handle wide Unicode and ANSI text", () => {
+	assert.equal(visibleLen("第1次"), 5);
+	assert.equal(visibleLen("😀"), 2);
+	assert.equal(visibleLen("\x1b[31m第1次\x1b[0m"), 5);
+	assert.equal(ellipsize("命令中文", 5), "命令…");
+	assert.equal(visibleLen(ellipsize("😀😀😀", 5)), 5);
+	assert.equal(ellipsize("👨‍👩‍👧‍👦", 2), "👨‍👩‍👧‍👦");
+	assert.equal(visibleLen(ellipsize("\x1b[31mabcdef\x1b[0m", 4)), 4);
+	const row = padRow("\x1b[31m命令😀\x1b[0m", "\x1b[32mexit 0\x1b[0m", 12);
+	assert.ok(visibleLen(row) <= 12, `${visibleLen(row)} > 12: ${row}`);
+});
+
 test("elapsed and stall helpers", () => {
 	assert.equal(formatDuration(1200), "1.2s");
 	assert.equal(isStalled(0, 14_999, 15_000), false);

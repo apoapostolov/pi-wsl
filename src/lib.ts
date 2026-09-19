@@ -8,6 +8,7 @@
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const MAX_CHARS = 50_000;
@@ -43,11 +44,8 @@ export function lastNonEmptyLines(text: string, n: number): string {
 }
 
 export function ellipsize(text: string, max: number): string {
-	if (max <= 0) return "";
-	const chars = [...text];
-	if (chars.length <= max) return text;
-	if (max === 1) return "…";
-	return `${chars.slice(0, max - 1).join("")}…`;
+	const truncated = truncateToWidth(text, max, "…");
+	return text.includes("\x1b") ? truncated : truncated.replace(/\x1b\[0m/g, "");
 }
 
 /** User-facing command. Never the export-prefixed unwrapped body. */
@@ -79,7 +77,7 @@ export function prefixOutputLines(text: string, glyph: string): string[] {
 }
 
 export function visibleLen(text: string): number {
-	return text.replace(/\x1b\[[0-9;]*m/g, "").length;
+	return visibleWidth(text);
 }
 
 /** Named distro replaces the WSL mark. Unset or "default" stays WSL. */
@@ -96,12 +94,13 @@ export function brandTone(opts: { stalled?: boolean; killed?: boolean }): "warni
 }
 
 export function padRow(left: string, right: string, width: number): string {
-	const gap = width - visibleLen(left) - visibleLen(right);
+	const safeWidth = Math.max(0, width);
+	const gap = safeWidth - visibleLen(left) - visibleLen(right);
 	if (gap >= 1) return `${left}${" ".repeat(gap)}${right}`;
-	const budget = Math.max(0, width - visibleLen(right) - 1);
-	let clipped = left;
-	while (visibleLen(clipped) > budget && clipped.length > 0) clipped = clipped.slice(0, -1);
-	return budget > 0 ? `${clipped} ${right}`.trimEnd() : right.slice(0, Math.max(0, width));
+	const budget = Math.max(0, safeWidth - visibleLen(right) - 1);
+	const clipped = truncateToWidth(left, budget, "");
+	if (budget > 0) return `${clipped} ${truncateToWidth(right, safeWidth - visibleLen(clipped) - 1, "")}`.trimEnd();
+	return truncateToWidth(right, safeWidth, "");
 }
 
 const EATEN_UNC = /^[A-Za-z]:\/wsl(?:\.localhost|\$)\/([^/]+)(?:\/(.*))?$/i;
