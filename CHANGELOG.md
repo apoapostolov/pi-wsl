@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 - 2026-09-20
+
+- Fix a TUI crash when a running command prints CJK or emoji output wider than the terminal. Rows now measure and truncate with the Pi TUI width helpers, so status and output lines always fit (fixes #1, PR #2 by @Ckrvxr).
+
 ## 0.3.5 - 2026-08-16
 
 - Publish the README with LF line endings so npmjs.com renders it. Windows CRLF made the site show an empty README.
