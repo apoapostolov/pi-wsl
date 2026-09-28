@@ -9,6 +9,7 @@ import { Type } from "typebox";
 import {
 	bashInterceptReason,
 	buildCommand,
+	defaultDistro,
 	DEFAULT_TIMEOUT_MS,
 	formatDistrosList,
 	formatStreams,
@@ -21,7 +22,9 @@ import {
 	parsePathQuery,
 	pathInterceptReason,
 	resolveDistro,
+	shellQuote,
 	shouldRegister,
+	toForwardUnc,
 	toWslPath,
 	toWslPathLive,
 	type WslArgs,
@@ -92,10 +95,11 @@ const parameters = Type.Object({
 		}),
 	),
 	crlf: Type.Optional(
-		Type.Boolean({
-			description: "When script is set, copy to /tmp and strip CR. Default true. Does not mutate the original file",
-		}),
+		Type.Boolean({ description: "Strip CRLF from script when present" }),
 	),
+	user: Type.Optional(Type.String({ description: "WSL user, such as root" })),
+	background: Type.Optional(Type.Boolean({ description: "Start detached and return a PID and log path" })),
+	log: Type.Optional(Type.String({ description: "Absolute output log path for background commands" })),
 });
 
 type Params = {
@@ -110,6 +114,9 @@ type Params = {
 	login?: boolean;
 	userBus?: boolean;
 	crlf?: boolean;
+	user?: string;
+	background?: boolean;
+	log?: string;
 };
 
 type ChunkFn = (chunk: string, stream: "stdout" | "stderr") => void;
@@ -118,6 +125,7 @@ function spawnFileAndArgs(
 	body: string,
 	linuxCwd: string | undefined,
 	distro: string | undefined,
+	user: string | undefined,
 	login: boolean,
 	useStdinCommand: boolean,
 	useCdFlag: boolean,
@@ -132,6 +140,7 @@ function spawnFileAndArgs(
 	}
 	const args = [
 		...(distro ? ["-d", distro] : []),
+		...(user ? ["-u", user] : []),
 		...(useCdFlag && linuxCwd ? ["--cd", linuxCwd] : []),
 		"--",
 		"bash",
@@ -141,7 +150,7 @@ function spawnFileAndArgs(
 	return { file: wslExe(), args };
 }
 
-function runWsl(
+async function runWsl(
 	body: string,
 	params: Params,
 	timeoutMs: number,
@@ -152,18 +161,24 @@ function runWsl(
 	stdout: string;
 	stderr: string;
 	killed: boolean;
+	stopReason?: "abort" | "timeout";
 	distro: string | undefined;
 }> {
+	if (params.user && !/^[A-Za-z_][A-Za-z0-9_.-]*\$?$/.test(params.user)) throw new Error("invalid WSL user");
+	if (inWsl() && params.user) throw new Error("user selection requires Windows-hosted Pi");
 	const distro = resolveDistro(params.distro, { cwd: params.cwd, script: params.script });
-	wakeDistro(distro);
-	const linuxCwd = toWslPathLive(params.cwd, distro);
-	const useCdFlag = Boolean(linuxCwd) && !inWsl() && wslSupportsCd(distro);
+	await wakeDistro(distro);
+	if (signal?.aborted) throw new Error("WSL command aborted before launch");
+	const linuxCwd = await toWslPathLive(params.cwd, distro);
+	const useCdFlag = Boolean(linuxCwd) && !inWsl() && await wslSupportsCd(distro);
+	if (signal?.aborted) throw new Error("WSL command aborted before launch");
 	const runBody = useCdFlag || inWsl() ? body : withCdPrefix(body, linuxCwd);
 	const useStdinCommand = params.input == null;
 	const { file, args, spawnCwd } = spawnFileAndArgs(
 		runBody,
 		linuxCwd,
 		distro,
+		params.user,
 		Boolean(params.login),
 		useStdinCommand,
 		useCdFlag,
@@ -182,28 +197,41 @@ function runWsl(
 		let stdout = "";
 		let stderr = "";
 		let killed = false;
-		const stdoutDec = new StringDecoder("utf8");
-		const stderrDec = new StringDecoder("utf8");
+		let stopReason: "abort" | "timeout" | undefined;
+		let stdoutDec = new StringDecoder("utf8");
+		let stderrDec = new StringDecoder("utf8");
+		let firstStdout = true;
+		let firstStderr = true;
 		const timer = setTimeout(() => {
 			killed = true;
+			stopReason = "timeout";
 			killTree(child);
 		}, timeoutMs);
 		const onAbort = () => {
 			killed = true;
+			stopReason = "abort";
 			killTree(child);
 		};
 		if (signal && typeof signal.addEventListener === "function") {
 			signal.addEventListener("abort", onAbort, { once: true });
 		}
-		const take = (chunk: Buffer, decoder: StringDecoder, stream: "stdout" | "stderr") => {
-			const text = decoder.write(chunk);
+		const take = (chunk: Buffer, stream: "stdout" | "stderr") => {
+			const utf16 = chunk.subarray(1, Math.min(16, chunk.length)).some((byte) => byte === 0);
+			if (stream === "stdout" && firstStdout) {
+				if (utf16) stdoutDec = new StringDecoder("utf16le");
+				firstStdout = false;
+			} else if (stream === "stderr" && firstStderr) {
+				if (utf16) stderrDec = new StringDecoder("utf16le");
+				firstStderr = false;
+			}
+			const text = (stream === "stdout" ? stdoutDec : stderrDec).write(chunk).replace(/^\uFEFF/, "");
 			if (!text) return;
 			if (stream === "stdout") stdout += text;
 			else stderr += text;
 			onChunk?.(text, stream);
 		};
-		child.stdout?.on("data", (chunk) => take(chunk, stdoutDec, "stdout"));
-		child.stderr?.on("data", (chunk) => take(chunk, stderrDec, "stderr"));
+		child.stdout?.on("data", (chunk) => take(chunk, "stdout"));
+		child.stderr?.on("data", (chunk) => take(chunk, "stderr"));
 		child.on("error", (err) => {
 			clearTimeout(timer);
 			signal?.removeEventListener("abort", onAbort);
@@ -222,31 +250,35 @@ function runWsl(
 				stderr += errTail;
 				onChunk?.(errTail, "stderr");
 			}
-			resolve({ code, stdout, stderr, killed, distro });
+			resolve({ code, stdout, stderr, killed, stopReason, distro });
 		});
 		const payload = useStdinCommand
 			? runBody.endsWith("\n")
 				? runBody
 				: `${runBody}\n`
 			: params.input ?? "";
-		child.stdin?.write(payload);
-		child.stdin?.end();
+		child.stdin?.on("error", (err: NodeJS.ErrnoException) => {
+			if (err.code !== "EPIPE") reject(err);
+		});
+		child.stdin?.end(payload);
 	});
 }
 
 function resultText(
-	result: { code: number | null; stdout: string; stderr: string; killed: boolean; distro?: string },
+	result: { code: number | null; stdout: string; stderr: string; killed: boolean; stopReason?: "abort" | "timeout"; distro?: string },
 	cwd: string | undefined,
 	timeoutMs: number,
+	installedDistros?: string[],
 ): { text: string; truncated: boolean } {
 	const streams = formatStreams(result.stdout, result.stderr);
 	let extra = "";
-	if (result.code !== 0 && looksLikeMissingDistro(result.stderr)) {
-		const listed = listInstalledDistros();
-		if (listed.length) extra = `\ninstalled distros: ${listed.join(", ")}`;
+	if (result.code !== 0 && looksLikeMissingDistro(result.stdout + result.stderr)) {
+		extra = installedDistros?.length
+			? `\ninstalled distros: ${installedDistros.join(", ")}`
+			: "\nRun /wsl distros to list installed distros";
 	}
 	const header = [
-		result.killed ? `killed after ${timeoutMs}ms` : `exit ${result.code ?? "?"}`,
+		result.stopReason === "abort" ? "aborted" : result.stopReason === "timeout" ? `timed out after ${timeoutMs}ms` : `exit ${result.code ?? "?"}`,
 		cwd ? `cwd ${toWslPath(cwd)}` : null,
 		result.distro ? `distro ${result.distro}` : "distro default",
 		streams.truncated ? "output truncated" : null,
@@ -283,23 +315,23 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "wsl",
 		label: "WSL",
-		description:
-			"Run a command in WSL by spawn()ing wsl.exe. Prefer this over bash for Linux paths, /mnt/c, and \\\\wsl.localhost. Git Bash rewrites those and breaks node/python. Pass command, or script plus args. Do not wrap in wsl -d or bash -lc",
-		promptSnippet: "Run Linux in WSL without Git Bash rewriting /mnt/c, UNC, or $VARS",
+		description: "Run Bash in WSL without Git Bash path and quote rewriting",
+		promptSnippet: "Run Linux commands in WSL through wsl.exe",
 		promptGuidelines: [
-			"Use the wsl tool instead of bash when the work is in WSL, /mnt/c, \\\\wsl.localhost, or a Linux home path",
-			"Never pass \\\\wsl.localhost paths to the bash tool. Git Bash rewrites them to C:\\\\wsl.localhost\\\\... and node dies MODULE_NOT_FOUND",
-			"Do not wrap a wsl tool call in wsl -d or bash -lc. Pass the raw command, or script plus an args array",
-			"Put long JS or nested quotes in script, or in input with a short command. A single args string around eval JS still splits wrong",
-			"systemctl --user needs the wsl tool userBus default, or login true. A non-login bash has no user D-Bus",
+			"Use wsl for Linux paths, /mnt/c, or WSL UNC paths; pass the raw command without a wsl or bash -lc wrapper",
+			"Use wsl script or input for long JS and nested quotes instead of one args string",
 		],
 		parameters,
 		async execute(_toolCallId, params: Params, signal, onUpdate) {
-			const timeoutMs = Math.max(1, Number(params.timeout ?? DEFAULT_TIMEOUT_MS / 1000)) * 1000;
 			const cwd = params.cwd;
 			const startedAt = Date.now();
 			let lastChunkAt = startedAt;
 			try {
+				const timeoutSeconds = Number(params.timeout ?? DEFAULT_TIMEOUT_MS / 1000);
+				if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3600) throw new Error("timeout must be 1 to 3600 seconds");
+				if (params.log && !params.background) throw new Error("log requires background: true");
+				if (params.background && params.input != null) throw new Error("background commands cannot read input");
+				const timeoutMs = timeoutSeconds * 1000;
 				const body = buildCommand(params);
 				let liveStdout = "";
 				let liveStderr = "";
@@ -336,7 +368,8 @@ export default function (pi: ExtensionAPI): void {
 					if (!flushTimer) flushTimer = setTimeout(flush, 120);
 				});
 				if (flushTimer) clearTimeout(flushTimer);
-				const rendered = resultText(result, cwd, timeoutMs);
+				const installed = result.code !== 0 && looksLikeMissingDistro(result.stdout + result.stderr) ? await listInstalledDistros() : undefined;
+				const rendered = resultText(result, cwd, timeoutMs, installed);
 				const endedAt = Date.now();
 				return {
 					content: [{ type: "text" as const, text: rendered.text }],
@@ -348,6 +381,7 @@ export default function (pi: ExtensionAPI): void {
 						stdout: result.stdout,
 						stderr: result.stderr,
 						unwrapped: body,
+						stopReason: result.stopReason,
 						startedAt,
 						lastChunkAt,
 						endedAt,
@@ -377,16 +411,29 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("wsl", {
-		description: "Run a one-liner in WSL, or /wsl distros / /wsl path <p>",
+		description: "Run in WSL, inspect status, list distros, or map a path",
 		handler: async (args, ctx) => {
 			const command = args.trim();
 			if (!command) {
-				ctx.ui.notify("Usage: /wsl <command>  |  /wsl distros  |  /wsl path <p>", "error");
+				ctx.ui.notify("Usage: /wsl <command> | /wsl status | /wsl distros | /wsl path <p> | /wsl job <pid> <log>", "error");
 				return;
 			}
 			if (isDistrosAlias(command)) {
-				const listed = listInstalledDistros();
+				const listed = await listInstalledDistros();
 				ctx.ui.notify(formatDistrosList(listed), listed.length ? "info" : "error");
+				return;
+			}
+			const jobQuery = command.match(/^job\s+(\d+)\s+(\/\S+)$/);
+			if (jobQuery) {
+				const [_, pid, log] = jobQuery;
+				const result = await runWsl(`if kill -0 ${pid} 2>/dev/null; then echo 'Process: running'; else echo 'Process: stopped'; fi; tail -n 20 -- ${shellQuote(log)}`, { command, userBus: false }, DEFAULT_TIMEOUT_MS);
+				ctx.ui.notify(result.stdout.trim() || result.stderr.trim(), result.code === 0 ? "info" : "error");
+				return;
+			}
+			if (command === "status") {
+				const distro = await defaultDistro();
+				const result = await runWsl("printf 'Distro: %s\\n' \"${WSL_DISTRO_NAME:-unknown}\"; printf 'User: '; id -un; printf 'Systemd: '; systemctl is-system-running 2>/dev/null || true; printf 'Automount C: '; wslpath -u 'C:\\' 2>/dev/null || true; printf 'IP: '; hostname -I 2>/dev/null; printf 'WSL version: '; wsl.exe --version 2>/dev/null | head -1 | tr -d '\\r\\000'", { command: "status", distro, userBus: false }, DEFAULT_TIMEOUT_MS);
+				ctx.ui.notify(result.stdout.trim() || result.stderr.trim(), result.code === 0 ? "info" : "error");
 				return;
 			}
 			const pathQuery = parsePathQuery(command);
@@ -395,8 +442,13 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 			if (pathQuery?.kind === "path") {
-				const mapped = toWslPathLive(pathQuery.input);
-				ctx.ui.notify(mapped ?? pathQuery.input, "info");
+				if (pathQuery.input.startsWith("/") && !/^\/[a-z](?:\/|$)/i.test(pathQuery.input)) {
+					const distro = await defaultDistro();
+					ctx.ui.notify(distro ? toForwardUnc(pathQuery.input, distro) : "Cannot resolve default WSL distro", distro ? "info" : "error");
+				} else {
+					const mapped = await toWslPathLive(pathQuery.input);
+					ctx.ui.notify(mapped ?? pathQuery.input, "info");
+				}
 				return;
 			}
 			try {
@@ -405,7 +457,8 @@ export default function (pi: ExtensionAPI): void {
 					{ command, cwd: ctx.cwd },
 					DEFAULT_TIMEOUT_MS,
 				);
-				const rendered = resultText(result, ctx.cwd, DEFAULT_TIMEOUT_MS);
+				const installed = result.code !== 0 && looksLikeMissingDistro(result.stdout + result.stderr) ? await listInstalledDistros() : undefined;
+				const rendered = resultText(result, ctx.cwd, DEFAULT_TIMEOUT_MS, installed);
 				ctx.ui.notify(rendered.text, result.code === 0 ? "info" : "error");
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");

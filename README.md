@@ -47,15 +47,21 @@ Human shortcuts:
 
 ```text
 /wsl uname -a
+/wsl status
 /wsl distros
 /wsl path C:\\src\\my-module
+/wsl path /home/dev/bin/qa.mjs
 ```
 
 Prefer this tool over `bash` when the path is Linux, `/mnt/c`, or `\\wsl.localhost`. Pass the raw command, and do not wrap it in `wsl -d` or `bash -lc`.
 
 On Win11, if the model still calls builtin `bash` with those paths, pi-wsl blocks the call and tells it to use this tool. It does not re-run the command through Git Bash. The same hook blocks `read` / `write` / `edit` on `\\wsl.localhost` and `/mnt/<drive>`. Set `PI_WSL_NO_INTERCEPT=true` to disable it.
 
-Drive-letter cwd and script paths go through `wslpath -u` when WSL is up. A first call wakes the distro. If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir>`.
+Drive-letter cwd and script paths use the distro's automount root, cached after the first lookup. Each distro wakes on its first call. If this WSL build has no `--cd`, the command is prefixed with `cd -- <dir>`.
+
+For a long-running job, pass `background: true`. The tool returns its PID and a log path. Supply `log` to choose the log file, or let the extension make one under `/tmp`. Check the job with `/wsl job <pid> <log>` or use the `wsl` tool to run `tail -n 20 <log>`. Background commands cannot read `input`; their output goes to the log.
+
+To run a system command without a `sudo` password prompt, pass `user: root`. `/wsl path` maps Windows paths into WSL and Linux paths back to `//wsl.localhost/<distro>/...`. The reverse mapping uses the Windows default distro unless `WSL_DISTRO` is set.
 
 The TUI row keeps the green tool box. Top line: icon and bold **WSL** (or **Debian** when that distro is set) plus the command on the left, exit and elapsed time on the right. Output uses `>` (stderr `!`) instead of a stdout banner. While it runs, a braille spinner sits on that `>` line. After 15s with no output the time and mark turn yellow (`PI_WSL_STALL_WARN`).
 
@@ -67,13 +73,16 @@ The TUI row keeps the green tool box. Top line: icon and bold **WSL** (or **Debi
 | `script` | | File to run. Windows, Git Bash `/c/...`, UNC, eaten UNC, or Linux path |
 | `args` | | Array (quoted) or one string. Windows, UNC, and `/c/...` items are converted |
 | `cwd` | | Converted like `script`. A UNC cwd also selects that distro |
-| `timeout` | `60` | Seconds. Bump it for slow launches. Abort kills the WSL process tree |
+| `timeout` | `60` | Seconds, from 1 to 3600. Abort kills the WSL process tree |
 | `distro` | UNC, then `WSL_DISTRO`, then WSL default | Pass `distro` to force one |
 | `env` | | Extra variables inside WSL |
 | `input` | | Written to the command's stdin. Use for long JS |
 | `login` | `false` | `bash -l` |
 | `userBus` | `true` | Sets `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` when unset. Needed for `systemctl --user` |
-| `crlf` | `true` | For `script`: copy to `/tmp`, strip CR, run the copy. Does not edit the original file |
+| `crlf` | `true` | For CRLF shell scripts, run a cleaned temporary copy beside the source and trash it after exit (requires `gio`). LF scripts, Python, and JavaScript run at their original paths |
+| `user` | distro default | Run as a named WSL user, for example `root`. Windows-hosted Pi only |
+| `background` | `false` | Start a detached job and return its PID and log path |
+| `log` | generated path | Absolute Linux output path for a background job |
 
 The tool registers on Windows and inside WSL. It does nothing on macOS or native Linux.
 

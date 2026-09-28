@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	backgroundCommand,
 	buildCommand,
 	convertArg,
 	formatArgs,
@@ -142,15 +143,18 @@ test("looksLikeConvertiblePath is conservative", () => {
 	assert.equal(convertArg("--eval-file"), "--eval-file");
 });
 
-test("buildCommand copies script to /tmp and strips CR by default", () => {
+test("buildCommand preserves LF script paths and cleans CRLF copies even on failure", () => {
 	const out = buildCommand({
-		script: "C:\\git-public\\mod\\dev\\probe.js",
+		script: "C:\\git-public\\mod\\dev\\probe.sh",
 		args: ["--world", "demo"],
 		userBus: false,
 	});
-	assert.match(out, /mktemp \/tmp\/pi-wsl/);
+	assert.match(out, /grep -q/);
+	assert.match(out, /mktemp "\$_pi_wsl_dir\/\.pi-wsl/);
+	assert.match(out, /trap 'if command -v gio/);
 	assert.match(out, /sed -i 's\/\\r\$\/\/'/);
-	assert.match(out, /node "\$_pi_wsl" '--world' 'demo'/);
+	assert.match(out, /else bash '\/mnt\/c\/git-public\/mod\/dev\/probe.sh' '--world' 'demo'/);
+	assert.equal(buildCommand({ script: "/tmp/x.js", userBus: false }), "node '/tmp/x.js'");
 	assert.doesNotMatch(out, /XDG_RUNTIME_DIR/);
 });
 
@@ -181,6 +185,15 @@ test("buildCommand rejects bad env names", () => {
 	);
 });
 
+test("background command returns a handle and does not leak shell quoting", () => {
+	const body = backgroundCommand("printf '%s' 'hello'", "/tmp/my job.log");
+	assert.match(body, /nohup bash -c 'printf '\\''%s'\\'' '\\''hello'\\'''/);
+	assert.match(body, /PID=%s LOG=%s/);
+	assert.match(body, /_pi_wsl_log='\/tmp\/my job.log'/);
+	assert.throws(() => backgroundCommand("true", "relative.log"), /absolute Linux path/);
+	assert.match(buildCommand({ command: "sleep 10", background: true, userBus: false }), /nohup bash -c/);
+});
+
 test("shellQuote handles embedded quotes", () => {
 	assert.equal(shellQuote("it's"), `'it'\\''s'`);
 });
@@ -197,6 +210,8 @@ test("parseWslList decodes UTF-16LE wsl -l output", () => {
 	const utf16 = Buffer.from(`\ufeff${names}`, "utf16le");
 	assert.deepEqual(parseWslList(utf16), ["Ubuntu-24.04", "Debian"]);
 	assert.deepEqual(parseWslList("Ubuntu\nDebian\n"), ["Ubuntu", "Debian"]);
+	assert.deepEqual(parseWslList("* Ubuntu\nDebian\n"), ["Ubuntu", "Debian"]);
+	assert.deepEqual(parseWslList("*\u0000 \u0000U\u0000b\u0000u\u0000n\u0000t\u0000u\u0000\r\u0000\n\u0000"), ["Ubuntu"]);
 });
 
 test("isDistrosAlias matches the slash-command words", () => {

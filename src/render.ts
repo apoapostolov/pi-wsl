@@ -22,6 +22,7 @@ export type WslRenderArgs = {
 export type WslRenderDetails = {
 	code?: number | null;
 	killed?: boolean;
+	stopReason?: "abort" | "timeout";
 	cwd?: string;
 	distro?: string | null;
 	stdout?: string;
@@ -74,9 +75,12 @@ export function headerStatus(opts: {
 	partial?: boolean;
 	stalled?: boolean;
 	killed?: boolean;
+	stopReason?: "abort" | "timeout";
 	code?: number | null;
 }): string {
 	if (opts.partial) return opts.stalled ? "stalled" : "running";
+	if (opts.stopReason === "abort") return "aborted";
+	if (opts.stopReason === "timeout") return "timed out";
 	if (opts.killed) return "killed";
 	if (opts.code == null) return "done";
 	return `exit ${opts.code}`;
@@ -99,6 +103,7 @@ export function buildStatusRow(
 		partial,
 		stalled,
 		killed: details?.killed,
+		stopReason: details?.stopReason,
 		code: details?.code,
 	});
 	const elapsedMs = startedAt != null ? (endedAt ?? now) - startedAt : undefined;

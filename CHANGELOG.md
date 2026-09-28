@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Run WSL startup and path probes asynchronously, cache drive mounts, and warm each named distro separately.
+- Keep shell scripts at their original path when possible. CRLF scripts use a temporary copy beside the source, which is sent to WSL Trash after success or failure when `gio` is available.
+- Distinguish aborted calls from timeouts and reject timeouts outside 1 to 3600 seconds.
+- Add detached commands with a PID and log path, a WSL user option, `/wsl status`, `/wsl job`, and Linux-to-Windows path mapping.
+- Accept default-distro markers and UTF-16 text from `wsl -l` across Node versions.
+
 ## 0.3.6 - 2026-09-20
 
 - Fix a TUI crash when a running command prints CJK or emoji output wider than the terminal. Rows now measure and truncate with the Pi TUI width helpers, so status and output lines always fit (fixes #1, PR #2 by @Ckrvxr).

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderWslResult, buildStatusRow, type WslRenderState } from "../src/render.ts";
+import { renderWslResult, buildStatusRow, headerStatus, type WslRenderState } from "../src/render.ts";
 import { visibleLen } from "../src/lib.ts";
 
 function themeLike() {
@@ -22,6 +22,11 @@ function ansiTheme() {
 		},
 	};
 }
+
+test("abort and timeout have distinct status", () => {
+	assert.equal(headerStatus({ killed: true, stopReason: "abort" }), "aborted");
+	assert.equal(headerStatus({ killed: true, stopReason: "timeout" }), "timed out");
+});
 
 test("status rows fit the terminal when the command contains wide Unicode", () => {
 	const row = buildStatusRow(

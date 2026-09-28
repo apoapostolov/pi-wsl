@@ -6,9 +6,12 @@
  * C:\wsl.localhost\DISTRO\... (MODULE_NOT_FOUND). This package spawn()s
  * System32\wsl.exe so Git Bash never sees the text.
  */
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
+const execFileAsync = promisify(execFile);
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const MAX_CHARS = 50_000;
@@ -114,6 +117,9 @@ export type WslUnc = { distro: string; posixPath: string };
 
 export type BuildParams = {
 	command?: string;
+	background?: boolean;
+	log?: string;
+	user?: string;
 	script?: string;
 	args?: WslArgs;
 	cwd?: string;
@@ -200,27 +206,29 @@ export function toWindowsPathForWslpath(input: string): string | undefined {
 	return undefined;
 }
 
-export function wslpathUnix(windowsPath: string, distro?: string): string | undefined {
-	try {
-		const out = execFileSync(
-			wslExe(),
-			[...(distro ? ["-d", distro] : []), "--", "wslpath", "-u", windowsPath],
-			{ timeout: 8000, windowsHide: true, encoding: "utf8" },
-		);
-		const line = String(out).trim().split(/\r?\n/)[0]?.trim();
-		return line || undefined;
-	} catch {
-		return undefined;
-	}
-}
+const mountRoots = new Map<string, Promise<string | undefined>>();
 
-/** Like toWslPath, but drive letters go through wslpath -u when WSL is up. */
-export function toWslPathLive(input: string | undefined, distro?: string): string | undefined {
+/** Ask WSL once per distro and drive for its automount root. Failed probes can be retried. */
+export async function toWslPathLive(input: string | undefined, distro?: string): Promise<string | undefined> {
 	const mapped = toWslPath(input);
-	if (!input || !mapped) return mapped;
+	if (!input || !mapped || inWsl()) return mapped;
 	const windows = toWindowsPathForWslpath(input);
 	if (!windows) return mapped;
-	return wslpathUnix(windows, distro) || mapped;
+	const drive = windows[0].toUpperCase();
+	const key = `${distro ?? ""}:${drive}`;
+	if (!mountRoots.has(key)) {
+		const probe = execFileAsync(wslExe(), [...(distro ? ["-d", distro] : []), "--", "wslpath", "-u", `${drive}:\\`], {
+			timeout: 8000, windowsHide: true, encoding: "utf8",
+		}).then(({ stdout }) => stdout.trim().split(/\r?\n/)[0]?.trim()).catch(() => {
+			mountRoots.delete(key);
+			return undefined;
+		});
+		mountRoots.set(key, probe);
+	}
+	const root = await mountRoots.get(key);
+	if (!root) return mapped;
+	const suffix = windows.slice(3).replace(/\\/g, "/");
+	return `${root.replace(/\/$/, "")}/${suffix}`;
 }
 
 export function withCdPrefix(body: string, linuxCwd: string | undefined): string {
@@ -228,41 +236,26 @@ export function withCdPrefix(body: string, linuxCwd: string | undefined): string
 	return `cd -- ${shellQuote(linuxCwd)} && { ${body}\n}`;
 }
 
-let cdProbe: boolean | undefined;
-export function wslSupportsCd(distro?: string): boolean {
+let cdProbe: Promise<boolean> | undefined;
+export async function wslSupportsCd(distro?: string): Promise<boolean> {
 	if (inWsl()) return false;
-	if (cdProbe !== undefined) return cdProbe;
-	try {
-		execFileSync(
-			wslExe(),
-			[...(distro ? ["-d", distro] : []), "--cd", "/tmp", "--", "true"],
-			{ timeout: 20000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
-		);
-		cdProbe = true;
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (looksLikeMissingDistro(msg)) {
-			cdProbe = true;
-		} else {
-			cdProbe = !/--cd|unknown argument|invalid option/i.test(msg);
-		}
-	}
+	cdProbe ??= execFileAsync(wslExe(), [...(distro ? ["-d", distro] : []), "--cd", "/tmp", "--", "true"], {
+		timeout: 20000, windowsHide: true,
+	}).then(() => true, (err: Error) => !/--cd|unknown argument|invalid option/i.test(err.message));
 	return cdProbe;
 }
 
-let wokeDistro = false;
-export function wakeDistro(distro?: string): void {
-	if (wokeDistro || inWsl()) return;
-	wokeDistro = true;
-	try {
-		execFileSync(wslExe(), [...(distro ? ["-d", distro] : []), "--", "true"], {
-			timeout: 20000,
-			windowsHide: true,
-			stdio: "ignore",
-		});
-	} catch {
-		// the real command will surface the error
+const wokeDistros = new Map<string, Promise<void>>();
+export async function wakeDistro(distro?: string): Promise<void> {
+	if (inWsl()) return;
+	const key = distro ?? "";
+	if (!wokeDistros.has(key)) {
+		const wake = execFileAsync(wslExe(), [...(distro ? ["-d", distro] : []), "--", "true"], {
+			timeout: 20000, windowsHide: true,
+		}).then(() => undefined, () => { wokeDistros.delete(key); });
+		wokeDistros.set(key, wake);
 	}
+	await wokeDistros.get(key);
 }
 
 export function parsePathQuery(args: string): { kind: "path"; input: string } | { kind: "path-usage" } | null {
@@ -342,14 +335,15 @@ function scriptBody(linux: string, args: WslArgs | undefined, crlf: boolean): st
 	const extra = formatArgs(args);
 	const runner = runnerFor(linux);
 	const quoted = shellQuote(linux);
-	if (!crlf) return `${runner} ${quoted}${extra}`;
-	return [
-		`_pi_wsl=$(mktemp /tmp/pi-wsl.XXXXXX)`,
-		`cp -- ${quoted} "$_pi_wsl"`,
-		`sed -i 's/\\r$//' "$_pi_wsl"`,
-		`${runner} "$_pi_wsl"${extra}`,
-		`rm -f "$_pi_wsl"`,
-	].join(" && ");
+	if (!crlf || runner !== "bash") return `${runner} ${quoted}${extra}`;
+	return `if LC_ALL=C grep -q $'\\r' -- ${quoted}; then _pi_wsl_dir=$(dirname -- ${quoted}); _pi_wsl=$(mktemp "$_pi_wsl_dir/.pi-wsl.XXXXXX" 2>/dev/null) || { _pi_wsl=$(mktemp /tmp/pi-wsl.XXXXXX) || exit 1; printf 'pi-wsl: source directory is read-only; script-relative paths may fail\\n' >&2; }; trap 'if command -v gio >/dev/null 2>&1; then gio trash -- "$_pi_wsl"; else printf "pi-wsl: temporary script left at %s (gio trash unavailable)\\n" "$_pi_wsl" >&2; fi' EXIT; cp -- ${quoted} "$_pi_wsl" && sed -i 's/\\r$//' "$_pi_wsl" && bash "$_pi_wsl"${extra}; else bash ${quoted}${extra}; fi`;
+}
+
+export function backgroundCommand(body: string, log?: string): string {
+	const path = log;
+	if (path && !path.startsWith("/")) throw new Error("background log must be an absolute Linux path");
+	const logSetup = path ? shellQuote(path) : "$(mktemp /tmp/pi-wsl.XXXXXX.log)";
+	return `_pi_wsl_log=${logSetup}; nohup bash -c ${shellQuote(body)} > "$_pi_wsl_log" 2>&1 < /dev/null & _pi_wsl_pid=$!; sleep 0.1; if kill -0 "$_pi_wsl_pid" 2>/dev/null; then printf 'PID=%s LOG=%s\\n' "$_pi_wsl_pid" "$_pi_wsl_log"; else wait "$_pi_wsl_pid"; _pi_wsl_code=$?; cat -- "$_pi_wsl_log"; exit "$_pi_wsl_code"; fi`;
 }
 
 export function buildCommand(params: BuildParams): string {
@@ -369,7 +363,8 @@ export function buildCommand(params: BuildParams): string {
 		body = unwrapWslWrapper(command);
 	}
 
-	return [...prefixes, body].join("; ");
+	const full = [...prefixes, body].join("; ");
+	return params.background ? backgroundCommand(full, params.log) : full;
 }
 
 export function clip(text: string): { text: string; truncated: boolean } {
@@ -405,23 +400,36 @@ export function parseWslList(output: Buffer | string): string[] {
 	const utf16 =
 		(buffer[0] === 0xff && buffer[1] === 0xfe) ||
 		buffer.subarray(1, Math.min(16, buffer.length)).some((byte) => byte === 0);
-	const text = utf16 ? buffer.toString("utf16le") : buffer.toString("utf8");
+	const text = typeof output === "string" ? output.replace(/\u0000/g, "") : utf16 ? buffer.toString("utf16le") : buffer.toString("utf8");
 	return text
 		.replace(/^\uFEFF/, "")
 		.split(/\r?\n/)
-		.map((s) => s.trim())
+		.map((s) => s.trim().replace(/^\*\s*/, ""))
 		.filter((s) => s && !s.toLowerCase().includes("noinstall") && !s.startsWith("Windows"));
 }
 
-export function listInstalledDistros(): string[] {
+export async function listInstalledDistros(): Promise<string[]> {
 	try {
-		const out = execFileSync(wslExe(), ["-l", "-q"], {
-			timeout: 5000,
-			windowsHide: true,
+		const { stdout } = await execFileAsync(wslExe(), ["-l", "-q"], {
+			timeout: 5000, windowsHide: true,
 		});
-		return parseWslList(out);
+		return parseWslList(stdout);
 	} catch {
 		return [];
+	}
+}
+
+/** Resolve the Windows default from wsl -l -v (the quiet list does not mark it). */
+export async function defaultDistro(): Promise<string | undefined> {
+	if (inWsl()) return process.env.WSL_DISTRO_NAME;
+	const explicit = process.env.WSL_DISTRO?.trim();
+	if (explicit) return explicit;
+	try {
+		const { stdout } = await execFileAsync(wslExe(), ["-l", "-v"], { timeout: 5000, windowsHide: true });
+		const text = Buffer.isBuffer(stdout) ? stdout.toString("utf16le") : String(stdout).replace(/\u0000/g, "");
+		return text.replace(/^\uFEFF/, "").split(/\r?\n/).map((line) => line.match(/^\s*\*\s+(\S+)/)?.[1]).find(Boolean);
+	} catch {
+		return undefined;
 	}
 }
 
