@@ -423,7 +423,7 @@ export default function (pi: ExtensionAPI): void {
 				ctx.ui.notify(formatDistrosList(listed), listed.length ? "info" : "error");
 				return;
 			}
-			const jobQuery = command.match(/^job\s+(\d+)\s+(\/\S+)$/);
+			const jobQuery = command.match(/^job\s+(\d+)\s+(\/.+)$/);
 			if (jobQuery) {
 				const [_, pid, log] = jobQuery;
 				const result = await runWsl(`if kill -0 ${pid} 2>/dev/null; then echo 'Process: running'; else echo 'Process: stopped'; fi; tail -n 20 -- ${shellQuote(log)}`, { command, userBus: false }, DEFAULT_TIMEOUT_MS);
