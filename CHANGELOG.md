@@ -1,12 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.3.7 - 2026-09-28
 
-- Run WSL startup and path probes asynchronously, cache drive mounts, and warm each named distro separately.
-- Keep shell scripts at their original path when possible. CRLF scripts use a temporary copy beside the source, which is sent to WSL Trash after success or failure when `gio` is available.
-- Distinguish aborted calls from timeouts and reject timeouts outside 1 to 3600 seconds.
-- Add detached commands with a PID and log path, a WSL user option, `/wsl status`, `/wsl job`, and Linux-to-Windows path mapping.
-- Accept default-distro markers and UTF-16 text from `wsl -l` across Node versions.
+Long jobs, root commands, and two-way path mapping join the tool, and the Windows host no longer freezes while WSL starts.
+
+### Added
+
+- Detached commands. `background: true` returns a PID and log path, with an optional `log` to choose one. A job that exits during the handoff reports its own output and exit code instead of a handle.
+- `user` runs a command as a named WSL account, so system work no longer needs `sudo` and a password.
+- `/wsl status` reports distro, user, systemd, automount root, IP, and WSL version in one call. `/wsl job <pid> <log>` shows a detached job's state and recent output.
+- `/wsl path` now maps Linux paths back to `//wsl.localhost/<distro>/...`, which `read`, `write`, and `edit` accept.
+- A `pi-wsl` skill ships with the package with the routing rules, job workflow, and known traps.
+
+### Changed
+
+- WSL startup and path probes run asynchronously, so the Pi TUI no longer blocks while a distro boots. Drive mounts are cached and each named distro wakes separately.
+- A stopped call now reads `aborted` or `timed out after Nms` instead of a misleading timeout line. Timeouts outside 1 to 3600 seconds are rejected.
+- Shell scripts keep their own path unless they carry CRLF, which previously moved every script to a temp copy and broke script-relative file reads. A CRLF copy is now taken beside the source and trashed on exit, including after a failure.
+
+### Fixed
+
+- `wsl -l` output that arrives as UTF-16 text with NUL padding, and the default-distro `*` marker, are decoded and stripped. Windows error text from a bad distro name is readable, and the tool lists the installed names.
 
 ## 0.3.6 - 2026-09-20
 
