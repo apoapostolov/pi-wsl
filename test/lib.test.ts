@@ -9,6 +9,7 @@ import {
 	formatStreams,
 	isDistrosAlias,
 	jobStatusCommand,
+	jobStopCommand,
 	looksLikeConvertiblePath,
 	looksLikeMissingDistro,
 	parseWslList,
@@ -188,7 +189,7 @@ test("buildCommand rejects bad env names", () => {
 
 test("background command returns a handle and does not leak shell quoting", () => {
 	const body = backgroundCommand("printf '%s' 'hello'", "/tmp/my job.log");
-	assert.match(body, /nohup env _pi_wsl_log="\$\_pi_wsl_log" bash -c /);
+	assert.match(body, /nohup env _pi_wsl_log="\$\_pi_wsl_log" setsid bash -c /);
 	assert.match(body, /_pi_wsl_log='\/tmp\/my job.log'/);
 	assert.match(body, /PID=%s LOG=%s RC=%s/);
 	assert.throws(() => backgroundCommand("true", "relative.log"), /absolute Linux path/);
@@ -223,6 +224,33 @@ test("jobStatusCommand reports the exit code only once the job has stopped", () 
 	assert.match(cmd, /tail -n 20 -- '\/tmp\/my job\.log'/);
 	assert.throws(() => jobStatusCommand("12a", "/tmp/a.log"), /pid must be digits/);
 	assert.throws(() => jobStatusCommand("1", "a.log"), /log must be an absolute Linux path/);
+});
+
+test("background command starts the job in its own process group", () => {
+	// Without setsid the job shares the tool's own group, so a group signal from
+	// /wsl job stop would hit the tool's shell and a single-pid kill would orphan
+	// the body's children.
+	const body = backgroundCommand("sleep 300", "/tmp/job.log");
+	assert.match(body, /nohup env _pi_wsl_log="\$\_pi_wsl_log" setsid bash -c /);
+	assert.match(buildCommand({ command: "sleep 300", background: true, userBus: false }), /setsid bash -c /);
+});
+
+test("jobStopCommand signals the whole group and escalates to KILL", () => {
+	const cmd = jobStopCommand("4321");
+	// Liveness is the group, not the leader: a group outlives its leader, so a
+	// leader-only check would call a job gone while a TERM-ignoring child runs on.
+	assert.equal(/kill -0 4321 /.test(cmd), false);
+	assert.equal((cmd.match(/kill -0 -4321/g) ?? []).length, 3);
+	assert.match(cmd, /^if kill -0 -4321 2>\/dev\/null; then kill -TERM -4321/);
+	assert.match(cmd, /"\$_pi_wsl_n" -lt 25/);
+	assert.match(cmd, /kill -KILL -4321/);
+	assert.match(cmd, /'Stopped: KILL sent to process group %s\\n' 4321/);
+	assert.match(cmd, /'Stopped: process group %s exited after TERM\\n' 4321/);
+	assert.match(cmd, /'Not running: no process group %s\\n' 4321/);
+	// Nothing signals the group when the job is already gone.
+	assert.ok(cmd.indexOf("kill -TERM -4321") < cmd.indexOf("Not running"));
+	assert.throws(() => jobStopCommand("43 21"), /pid must be digits/);
+	assert.throws(() => jobStopCommand(""), /pid must be digits/);
 });
 
 test("shellQuote handles embedded quotes", () => {

@@ -354,15 +354,37 @@ export function backgroundCommand(body: string, log?: string): string {
 	// it exists only once the body has actually finished. A stale rc from an
 	// earlier run of the same log path is cleared first so it cannot pass for
 	// this run.
-	return `_pi_wsl_log=${logSetup}; rm -f -- "$_pi_wsl_log.rc"; nohup env _pi_wsl_log="$_pi_wsl_log" bash -c ${shellQuote(inner)} > "$_pi_wsl_log" 2>&1 < /dev/null & _pi_wsl_pid=$!; sleep 0.1; if kill -0 "$_pi_wsl_pid" 2>/dev/null && [ ! -f "$_pi_wsl_log.rc" ]; then printf 'PID=%s LOG=%s RC=%s\\n' "$_pi_wsl_pid" "$_pi_wsl_log" "$_pi_wsl_log.rc"; else wait "$_pi_wsl_pid"; _pi_wsl_code=$?; cat -- "$_pi_wsl_log"; exit "$_pi_wsl_code"; fi`;
+	// setsid gives the job its own session and process group, so the returned pid
+	// is also the group id and /wsl job stop can signal the whole tree. Without it
+	// the job would share the tool's own group, where a group signal would hit the
+	// tool's shell, and a single-pid kill would orphan the body's children.
+	return `_pi_wsl_log=${logSetup}; rm -f -- "$_pi_wsl_log.rc"; nohup env _pi_wsl_log="$_pi_wsl_log" setsid bash -c ${shellQuote(inner)} > "$_pi_wsl_log" 2>&1 < /dev/null & _pi_wsl_pid=$!; sleep 0.1; if kill -0 "$_pi_wsl_pid" 2>/dev/null && [ ! -f "$_pi_wsl_log.rc" ]; then printf 'PID=%s LOG=%s RC=%s\\n' "$_pi_wsl_pid" "$_pi_wsl_log" "$_pi_wsl_log.rc"; else wait "$_pi_wsl_pid"; _pi_wsl_code=$?; cat -- "$_pi_wsl_log"; exit "$_pi_wsl_code"; fi`;
 }
 
 /** Status, exit code once the job has ended, and tail for a detached job. */
 export function jobStatusCommand(pid: string, log: string): string {
-	if (!/^\d+$/.test(pid)) throw new Error("job pid must be digits");
+	assertPid(pid);
 	if (!log.startsWith("/")) throw new Error("job log must be an absolute Linux path");
 	const rcPath = `${log}.rc`;
 	return `if kill -0 ${pid} 2>/dev/null; then printf 'Process: running\\n'; else printf 'Process: stopped\\n'; if [ -f ${shellQuote(rcPath)} ]; then printf 'Exit: %s\\n' "$(cat -- ${shellQuote(rcPath)})"; else printf 'Exit: unknown, no rc file at %s\\n' ${shellQuote(rcPath)}; fi; fi; tail -n 20 -- ${shellQuote(log)}`;
+}
+
+/**
+ * Stop a detached job. The pid from the handle is the job's process group, so the
+ * signal reaches the body's children too. TERM first, then KILL for anything
+ * still standing after the grace period.
+ *
+ * Liveness is tested on the group, not the leader. A group outlives its leader,
+ * so a leader-only check would report the job gone while a child that ignored
+ * TERM kept running.
+ */
+export function jobStopCommand(pid: string): string {
+	assertPid(pid);
+	return `if kill -0 -${pid} 2>/dev/null; then kill -TERM -${pid} 2>/dev/null; _pi_wsl_n=0; while kill -0 -${pid} 2>/dev/null && [ "$_pi_wsl_n" -lt 25 ]; do _pi_wsl_n=$((_pi_wsl_n + 1)); sleep 0.2; done; if kill -0 -${pid} 2>/dev/null; then kill -KILL -${pid} 2>/dev/null; printf 'Stopped: KILL sent to process group %s\\n' ${pid}; else printf 'Stopped: process group %s exited after TERM\\n' ${pid}; fi; else printf 'Not running: no process group %s\\n' ${pid}; fi`;
+}
+
+function assertPid(pid: string): void {
+	if (!/^\d+$/.test(pid)) throw new Error("job pid must be digits");
 }
 
 export function buildCommand(params: BuildParams): string {

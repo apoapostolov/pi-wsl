@@ -64,6 +64,8 @@ The result prints a handle: `PID=1121025 LOG=/tmp/my-module-dev.log RC=/tmp/my-m
 
 The body writes its exit status to the `RC` path as its last act, so a job that ends after the handoff can still be judged. A job that exits during the handoff returns its own output and exit code instead of a handle, so read the result before assuming it detached. Detached commands have no stdin, so they cannot read `input`.
 
+`PID=` is also the job's process group, so `/wsl job stop <pid>` ends the whole tree, children included. It sends TERM, waits five seconds, then sends KILL to anything still standing, and says which happened. A job that is stopped has no exit status, so its `RC` file stays absent and `/wsl job` reports the exit as unknown.
+
 ### Root work
 
 `sudo` needs a terminal and a password, so it always fails here. Pass `user: root` for package installs, system units, and files under `/etc`:
@@ -95,6 +97,7 @@ The reverse form is what you hand to `read`, `write`, and `edit`. It uses the Wi
 | `/wsl distros` | Installed distro names |
 | `/wsl path <p>` | Map a Windows, UNC, or Linux path |
 | `/wsl job <pid> <log>` | Process state, exit code once ended, plus the last 20 log lines |
+| `/wsl job stop <pid>` | Stop a detached job and its children |
 
 ### TUI
 

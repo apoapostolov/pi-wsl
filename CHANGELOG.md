@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.9 - 2026-09-29
+
+A detached job can be stopped from Pi.
+
+### Added
+
+- `/wsl job stop <pid>` terminates a detached job. The handle's `PID=` is the
+  job's process group, so the stop reaches the body's children as well as the
+  wrapper, which a single-pid `kill` left running as orphans. TERM first, then
+  KILL for anything still standing after a five second grace, and the result
+  says which happened. A group that is already gone is reported, not signalled.
+
+### Changed
+
+- A background job is launched with `setsid`, so it gets its own session and
+  process group. Previously it shared the tool's own process group, which made a
+  group signal unsafe: `kill -TERM -<pid>` against a handle from the old
+  launcher would have signalled the tool's own shell. Only handles from 0.3.9
+  onward carry a usable process group.
+
 ## 0.3.8 - 2026-09-28
 
 A detached job can now be judged after it ends.

@@ -39,13 +39,16 @@ side. Never hand a Linux path to `bash`.
    `tail -n 40 <log>` and `ps -p <pid> -o pid,etime,cmd`. **Complete when:** you
    know whether the job runs, what its last output was, and its `Exit:` line
    once it stops.
-3. Stop it with `kill <pid>` or `pkill -f <pattern>`. **Complete when:** the
-   PID is gone.
+3. Stop it with `/wsl job stop <pid>`, which ends the body and its children
+   together. `kill <pid>` alone leaves the children running, and
+   `pkill -f <pattern>` is the fallback when you have no pid.
+   **Complete when:** `/wsl job <pid> <log>` reports the process stopped.
 4. Remove the log and its `.rc` sidecar when the job finishes. **Complete
    when:** no logs from your own runs are left in `/tmp`.
 
 A job that exits immediately returns its own output and exit code instead of a
-handle, so read the result before assuming it detached.
+handle, so read the result before assuming it detached. A job you stopped has
+no exit status, so its `Exit:` line stays unknown.
 
 ## Root work
 

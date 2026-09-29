@@ -17,6 +17,7 @@ import {
 	inWsl,
 	isDistrosAlias,
 	jobStatusCommand,
+	jobStopCommand,
 	killTree,
 	listInstalledDistros,
 	looksLikeMissingDistro,
@@ -415,12 +416,21 @@ export default function (pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const command = args.trim();
 			if (!command) {
-				ctx.ui.notify("Usage: /wsl <command> | /wsl status | /wsl distros | /wsl path <p> | /wsl job <pid> <log>", "error");
+				ctx.ui.notify("Usage: /wsl <command> | /wsl status | /wsl distros | /wsl path <p> | /wsl job <pid> <log> | /wsl job stop <pid>", "error");
 				return;
 			}
 			if (isDistrosAlias(command)) {
 				const listed = await listInstalledDistros();
 				ctx.ui.notify(formatDistrosList(listed), listed.length ? "info" : "error");
+				return;
+			}
+			// A trailing log is accepted and ignored, so `/wsl job stop <pid> <log>`
+			// works too, but stop needs only the pid.
+			const stopQuery = command.match(/^job\s+stop\s+(\d+)(?:\s.*)?$/);
+			if (stopQuery) {
+				const [, pid] = stopQuery;
+				const result = await runWsl(jobStopCommand(pid), { command, userBus: false }, DEFAULT_TIMEOUT_MS);
+				ctx.ui.notify(result.stdout.trim() || result.stderr.trim(), result.code === 0 ? "info" : "error");
 				return;
 			}
 			const jobQuery = command.match(/^job\s+(\d+)\s+(\/.+)$/);
