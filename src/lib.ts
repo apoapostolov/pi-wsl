@@ -343,7 +343,26 @@ export function backgroundCommand(body: string, log?: string): string {
 	const path = log;
 	if (path && !path.startsWith("/")) throw new Error("background log must be an absolute Linux path");
 	const logSetup = path ? shellQuote(path) : "$(mktemp /tmp/pi-wsl.XXXXXX.log)";
-	return `_pi_wsl_log=${logSetup}; nohup bash -c ${shellQuote(body)} > "$_pi_wsl_log" 2>&1 < /dev/null & _pi_wsl_pid=$!; sleep 0.1; if kill -0 "$_pi_wsl_pid" 2>/dev/null; then printf 'PID=%s LOG=%s\\n' "$_pi_wsl_pid" "$_pi_wsl_log"; else wait "$_pi_wsl_pid"; _pi_wsl_code=$?; cat -- "$_pi_wsl_log"; exit "$_pi_wsl_code"; fi`;
+	// The wrapped body records its exit status beside the log, because a job that
+	// outlives the handoff has no other way to report how it ended. The body runs
+	// in a subshell, so its own `exit` ends the subshell instead of skipping the
+	// write the way it would inside a brace group, and the wrapper exits with the
+	// body's status so a job that fails during the handoff still returns that code.
+	const inner = `( ${body}\n); _pi_wsl_code=$?; printf '%s\\n' "$_pi_wsl_code" > "$_pi_wsl_log.rc"; exit "$_pi_wsl_code"`;
+	// A job that ends during the handoff leaves a zombie the parent has not
+	// reaped, and kill -0 still succeeds on it. The rc file is the reliable test:
+	// it exists only once the body has actually finished. A stale rc from an
+	// earlier run of the same log path is cleared first so it cannot pass for
+	// this run.
+	return `_pi_wsl_log=${logSetup}; rm -f -- "$_pi_wsl_log.rc"; nohup env _pi_wsl_log="$_pi_wsl_log" bash -c ${shellQuote(inner)} > "$_pi_wsl_log" 2>&1 < /dev/null & _pi_wsl_pid=$!; sleep 0.1; if kill -0 "$_pi_wsl_pid" 2>/dev/null && [ ! -f "$_pi_wsl_log.rc" ]; then printf 'PID=%s LOG=%s RC=%s\\n' "$_pi_wsl_pid" "$_pi_wsl_log" "$_pi_wsl_log.rc"; else wait "$_pi_wsl_pid"; _pi_wsl_code=$?; cat -- "$_pi_wsl_log"; exit "$_pi_wsl_code"; fi`;
+}
+
+/** Status, exit code once the job has ended, and tail for a detached job. */
+export function jobStatusCommand(pid: string, log: string): string {
+	if (!/^\d+$/.test(pid)) throw new Error("job pid must be digits");
+	if (!log.startsWith("/")) throw new Error("job log must be an absolute Linux path");
+	const rcPath = `${log}.rc`;
+	return `if kill -0 ${pid} 2>/dev/null; then printf 'Process: running\\n'; else printf 'Process: stopped\\n'; if [ -f ${shellQuote(rcPath)} ]; then printf 'Exit: %s\\n' "$(cat -- ${shellQuote(rcPath)})"; else printf 'Exit: unknown, no rc file at %s\\n' ${shellQuote(rcPath)}; fi; fi; tail -n 20 -- ${shellQuote(log)}`;
 }
 
 export function buildCommand(params: BuildParams): string {

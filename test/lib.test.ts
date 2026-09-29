@@ -8,6 +8,7 @@ import {
 	formatDistrosList,
 	formatStreams,
 	isDistrosAlias,
+	jobStatusCommand,
 	looksLikeConvertiblePath,
 	looksLikeMissingDistro,
 	parseWslList,
@@ -187,11 +188,41 @@ test("buildCommand rejects bad env names", () => {
 
 test("background command returns a handle and does not leak shell quoting", () => {
 	const body = backgroundCommand("printf '%s' 'hello'", "/tmp/my job.log");
-	assert.match(body, /nohup bash -c 'printf '\\''%s'\\'' '\\''hello'\\'''/);
-	assert.match(body, /PID=%s LOG=%s/);
+	assert.match(body, /nohup env _pi_wsl_log="\$\_pi_wsl_log" bash -c /);
 	assert.match(body, /_pi_wsl_log='\/tmp\/my job.log'/);
+	assert.match(body, /PID=%s LOG=%s RC=%s/);
 	assert.throws(() => backgroundCommand("true", "relative.log"), /absolute Linux path/);
-	assert.match(buildCommand({ command: "sleep 10", background: true, userBus: false }), /nohup bash -c/);
+	assert.match(buildCommand({ command: "sleep 10", background: true, userBus: false }), /nohup env _pi_wsl_log=/);
+});
+
+test("background command records the exit code beside the log", () => {
+	const body = backgroundCommand("exit 3", "/tmp/my job.log");
+	// The body runs in a subshell so its own `exit` cannot skip the sidecar
+	// write, and the printf survives shellQuote.
+	assert.match(body, /\n\); _pi_wsl_code=\$\?; printf '\\''%s\\n'\\'' "\$_pi_wsl_code" > "\$_pi_wsl_log\.rc"; exit "\$_pi_wsl_code"/);
+	assert.match(body, /printf 'PID=%s LOG=%s RC=%s\\n' "\$_pi_wsl_pid" "\$_pi_wsl_log" "\$_pi_wsl_log\.rc"/);
+	assert.match(buildCommand({ command: "exit 3", background: true, userBus: false }), /exit "\$_pi_wsl_code"'/);
+	// A brace group would let `exit` terminate the wrapper before the write.
+	assert.equal(/bash -c '\{/.test(body), false);
+	// A finished job leaves a zombie that kill -0 accepts, so the rc file decides
+	// between a handle and inline output, and a stale rc must not pass for a run.
+	assert.match(body, /rm -f -- "\$_pi_wsl_log\.rc"/);
+	assert.match(body, /kill -0 "\$_pi_wsl_pid" 2>\/dev\/null && \[ ! -f "\$_pi_wsl_log\.rc" \]/);
+});
+
+test("jobStatusCommand reports the exit code only once the job has stopped", () => {
+	const cmd = jobStatusCommand("1234", "/tmp/my job.log");
+	assert.match(cmd, /kill -0 1234/);
+	assert.match(cmd, /printf 'Process: running\\n'/);
+	// The rc file is only written when the body ends, so the read has to sit in
+	// the stopped branch or a live job would be reported as having no code.
+	assert.ok(cmd.indexOf("[ -f") > cmd.indexOf("Process: stopped"));
+	assert.ok(cmd.indexOf("Process: stopped") < cmd.indexOf("Process: running") + cmd.length);
+	assert.match(cmd, /printf 'Exit: %s\\n' "\$\(cat -- '\/tmp\/my job\.log\.rc'\)"/);
+	assert.match(cmd, /printf 'Exit: unknown, no rc file at %s\\n'/);
+	assert.match(cmd, /tail -n 20 -- '\/tmp\/my job\.log'/);
+	assert.throws(() => jobStatusCommand("12a", "/tmp/a.log"), /pid must be digits/);
+	assert.throws(() => jobStatusCommand("1", "a.log"), /log must be an absolute Linux path/);
 });
 
 test("shellQuote handles embedded quotes", () => {

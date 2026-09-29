@@ -60,9 +60,9 @@ background: true
 log: /tmp/my-module-dev.log
 ```
 
-The result prints a handle: `PID=1121025 LOG=/tmp/my-module-dev.log`. Poll it with ordinary `wsl` calls such as `tail -n 40 /tmp/my-module-dev.log` or `ps -p 1121025 -o pid,etime,cmd`, and stop it with `kill 1121025`. Omit `log` to get a generated path under `/tmp`.
+The result prints a handle: `PID=1121025 LOG=/tmp/my-module-dev.log RC=/tmp/my-module-dev.log.rc`. Poll it with ordinary `wsl` calls such as `tail -n 40 /tmp/my-module-dev.log` or `ps -p 1121025 -o pid,etime,cmd`, and stop it with `kill 1121025`. `/wsl job <pid> <log>` reports the state, the exit code once the job has ended, and the last 20 log lines. Omit `log` to get a generated path under `/tmp`.
 
-A job that exits during the handoff returns its own output and exit code instead of a handle, so read the result before assuming it detached. Detached commands have no stdin, so they cannot read `input`.
+The body writes its exit status to the `RC` path as its last act, so a job that ends after the handoff can still be judged. A job that exits during the handoff returns its own output and exit code instead of a handle, so read the result before assuming it detached. Detached commands have no stdin, so they cannot read `input`.
 
 ### Root work
 
@@ -94,7 +94,7 @@ The reverse form is what you hand to `read`, `write`, and `edit`. It uses the Wi
 | `/wsl status` | Distro, user, systemd state, automount root, IP, WSL version |
 | `/wsl distros` | Installed distro names |
 | `/wsl path <p>` | Map a Windows, UNC, or Linux path |
-| `/wsl job <pid> <log>` | Process state plus the last 20 log lines |
+| `/wsl job <pid> <log>` | Process state, exit code once ended, plus the last 20 log lines |
 
 ### TUI
 
@@ -111,7 +111,7 @@ The TUI row keeps the green tool box. Top line: icon and bold **WSL** (or **Debi
 | `timeout` | `60` | Seconds, from 1 to 3600. Abort kills the WSL process tree |
 | `distro` | UNC, then `WSL_DISTRO`, then WSL default | Pass `distro` to force one |
 | `user` | distro default | Run as a named WSL user, such as `root`. Windows-hosted Pi only |
-| `background` | `false` | Start a detached job and return its PID and log path |
+| `background` | `false` | Start a detached job and return its PID, log path, and exit-code path |
 | `log` | generated path | Absolute Linux output path for a background job |
 | `env` | | Extra variables inside WSL |
 | `input` | | Written to the command's stdin. Use for long JS. Not with `background` |

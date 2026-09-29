@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.8 - 2026-09-28
+
+A detached job can now be judged after it ends.
+
+### Fixed
+
+- A background job records its exit status in a `.rc` file beside the log and
+  reports the path as `RC=` in the handle, so `/wsl job <pid> <log>` can show
+  `Exit:` once the job has stopped. Before this, a job that ended after the
+  handoff reported its output through the log but its exit code was never
+  recoverable.
+- A job that ends inside the handoff window is reported inline with its real
+  exit code again. `kill -0` still succeeds on a child the parent has not reaped,
+  so a job that failed instantly could be handed back as a live PID.
+
 ## 0.3.7 - 2026-09-28
 
 Long jobs, root commands, and two-way path mapping join the tool, and the Windows host no longer freezes while WSL starts.

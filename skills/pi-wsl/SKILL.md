@@ -34,14 +34,15 @@ side. Never hand a Linux path to `bash`.
 ## Long jobs
 
 1. Start with `background: true`, plus `log: /tmp/name.log` when you want a
-   stable path. **Complete when:** the result prints `PID=` and `LOG=`.
-2. Poll through the `wsl` tool with `tail -n 40 <log>` or
-   `ps -p <pid> -o pid,etime,cmd`. **Complete when:** you know whether the job
-   runs and what its last output was.
+   stable path. **Complete when:** the result prints `PID=`, `LOG=`, and `RC=`.
+2. Poll with `/wsl job <pid> <log>`, or through the `wsl` tool with
+   `tail -n 40 <log>` and `ps -p <pid> -o pid,etime,cmd`. **Complete when:** you
+   know whether the job runs, what its last output was, and its `Exit:` line
+   once it stops.
 3. Stop it with `kill <pid>` or `pkill -f <pattern>`. **Complete when:** the
    PID is gone.
-4. Remove the log when the job finishes. **Complete when:** no logs from your
-   own runs are left in `/tmp`.
+4. Remove the log and its `.rc` sidecar when the job finishes. **Complete
+   when:** no logs from your own runs are left in `/tmp`.
 
 A job that exits immediately returns its own output and exit code instead of a
 handle, so read the result before assuming it detached.

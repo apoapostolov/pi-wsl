@@ -16,13 +16,13 @@ import {
 	interceptEnabled,
 	inWsl,
 	isDistrosAlias,
+	jobStatusCommand,
 	killTree,
 	listInstalledDistros,
 	looksLikeMissingDistro,
 	parsePathQuery,
 	pathInterceptReason,
 	resolveDistro,
-	shellQuote,
 	shouldRegister,
 	toForwardUnc,
 	toWslPath,
@@ -425,8 +425,8 @@ export default function (pi: ExtensionAPI): void {
 			}
 			const jobQuery = command.match(/^job\s+(\d+)\s+(\/.+)$/);
 			if (jobQuery) {
-				const [_, pid, log] = jobQuery;
-				const result = await runWsl(`if kill -0 ${pid} 2>/dev/null; then echo 'Process: running'; else echo 'Process: stopped'; fi; tail -n 20 -- ${shellQuote(log)}`, { command, userBus: false }, DEFAULT_TIMEOUT_MS);
+				const [, pid, log] = jobQuery;
+				const result = await runWsl(jobStatusCommand(pid, log), { command, userBus: false }, DEFAULT_TIMEOUT_MS);
 				ctx.ui.notify(result.stdout.trim() || result.stderr.trim(), result.code === 0 ? "info" : "error");
 				return;
 			}
