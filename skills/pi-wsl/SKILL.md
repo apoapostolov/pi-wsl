@@ -91,6 +91,9 @@ failure. An unknown distro lists the installed names.
   so pass the inner command directly.
 - `background` and `input` cannot combine. A detached job has no stdin, so a
   program that prompts will hang.
+- A detached job needs `setsid` from util-linux. Without it the job exits `127`.
+- A bare `kill <pid>` ends the wrapper and leaves the body's children running.
+  Use `/wsl job stop <pid>`, which signals the whole process group.
 - A CRLF shell script runs from a temporary copy beside the source and is
   trashed on exit, which needs `gio`. A read-only source directory moves that
   copy to `/tmp` and warns that script-relative paths may fail.

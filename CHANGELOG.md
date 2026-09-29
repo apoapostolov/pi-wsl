@@ -11,6 +11,8 @@ A detached job can be stopped from Pi.
   wrapper, which a single-pid `kill` left running as orphans. TERM first, then
   KILL for anything still standing after a five second grace, and the result
   says which happened. A group that is already gone is reported, not signalled.
+- Detached jobs need `setsid` from util-linux. Without it the job exits `127`
+  instead of starting.
 
 ### Changed
 
@@ -19,6 +21,17 @@ A detached job can be stopped from Pi.
   group signal unsafe: `kill -TERM -<pid>` against a handle from the old
   launcher would have signalled the tool's own shell. Only handles from 0.3.9
   onward carry a usable process group.
+
+### Known limitations
+
+- Right after a stop, a not-yet-reaped process can leave the group briefly
+  visible, so a stop that only needed TERM may occasionally be worded as
+  `KILL sent`. It is cosmetic and does not leak anything.
+- `/wsl job <pid> <log>` watches the group leader, while `/wsl job stop <pid>`
+  watches the whole group. The asymmetry is deliberate: status answers whether
+  the launched body finished, and stop has to catch a child that outlived the
+  leader. Changing status to the group form would report a finished job as
+  running for as long as any stray grandchild lived.
 
 ## 0.3.8 - 2026-09-28
 

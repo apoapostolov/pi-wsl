@@ -18,7 +18,7 @@ Wrapping the call in `wsl -d ... -- bash -lc '...'` does not fix it, because tha
 
 ## Install
 
-Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed.
+Needs [Pi](https://github.com/earendil-works/pi) on Windows with WSL installed. Detached jobs also need `setsid` from util-linux, which every mainstream distro carries. Without it a background job exits `127` instead of starting.
 
 ```bash
 pi install npm:@apoapostolov/pi-wsl
@@ -60,11 +60,13 @@ background: true
 log: /tmp/my-module-dev.log
 ```
 
-The result prints a handle: `PID=1121025 LOG=/tmp/my-module-dev.log RC=/tmp/my-module-dev.log.rc`. Poll it with ordinary `wsl` calls such as `tail -n 40 /tmp/my-module-dev.log` or `ps -p 1121025 -o pid,etime,cmd`, and stop it with `kill 1121025`. `/wsl job <pid> <log>` reports the state, the exit code once the job has ended, and the last 20 log lines. Omit `log` to get a generated path under `/tmp`.
+The result prints a handle: `PID=1121025 LOG=/tmp/my-module-dev.log RC=/tmp/my-module-dev.log.rc`. Poll it with `/wsl job <pid> <log>`, or with ordinary `wsl` calls such as `tail -n 40 /tmp/my-module-dev.log` and `ps -p 1121025 -o pid,etime,cmd`. Omit `log` to get a generated path under `/tmp`.
 
 The body writes its exit status to the `RC` path as its last act, so a job that ends after the handoff can still be judged. A job that exits during the handoff returns its own output and exit code instead of a handle, so read the result before assuming it detached. Detached commands have no stdin, so they cannot read `input`.
 
-`PID=` is also the job's process group, so `/wsl job stop <pid>` ends the whole tree, children included. It sends TERM, waits five seconds, then sends KILL to anything still standing, and says which happened. A job that is stopped has no exit status, so its `RC` file stays absent and `/wsl job` reports the exit as unknown.
+`PID=` is also the job's process group, so `/wsl job stop <pid>` ends the whole tree, children included. It sends TERM, waits five seconds, then sends KILL to anything still standing, and says which happened. Prefer it to a bare `kill <pid>`, which ends the wrapper and leaves the body's children running as orphans. A job that is stopped has no exit status, so its `RC` file stays absent and `/wsl job` reports the exit as unknown.
+
+`/wsl job <pid> <log>` and `/wsl job stop <pid>` reason about different things, on purpose. Status watches the group leader, because the leader is the wrapper that waits on the body, and the `RC` file appearing is the positive sign the body ended. Stop watches the whole process group, because a group outlives its leader and a child that ignored TERM would otherwise be reported as gone while still running.
 
 ### Root work
 
@@ -147,7 +149,7 @@ Or pass `distro` on the tool call.
 npm test
 ```
 
-Tests cover path repair, UNC distro pick, Git Bash `/c/` map, `wsl -l` decoding, quoting, env, the CRLF copy, and the detached-command wrapper. They do not need WSL.
+Tests cover path repair, UNC distro pick, Git Bash `/c/` map, `wsl -l` decoding, quoting, env, the CRLF copy, the detached-command wrapper and its exit-code sidecar, job status, and the process-group stop. They do not need WSL.
 
 ## License
 
