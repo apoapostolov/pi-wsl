@@ -1,6 +1,22 @@
-# pi-wsl
+<!-- markdownlint-disable MD033 -->
 
-Run Pi commands in WSL with the paths and quotes you actually typed. This
+<div align="center">
+
+  <h1>pi-wsl</h1>
+
+  <p>Run Pi commands in WSL with the paths and quotes you actually typed.</p>
+
+  <p>
+    <a href="#readme"><img src="https://img.shields.io/badge/Type-Pi%20extension-555" alt="Type: Pi extension"></a>
+    <a href="./package.json"><img src="https://img.shields.io/badge/Language-TypeScript-555" alt="Language: TypeScript"></a>
+    <a href="https://www.npmjs.com/package/@apoapostolov/pi-wsl/v/0.3.9"><img src="https://img.shields.io/badge/Version-0.3.9-blue" alt="Version: 0.3.9"></a>
+    <a href="https://www.npmjs.com/package/@apoapostolov/pi-wsl/v/0.3.9"><img src="https://img.shields.io/badge/Last%20release-2026--09--29-blue" alt="Last release: 2026-09-29"></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT"></a>
+  </p>
+
+</div>
+
+This
 extension calls `wsl.exe` directly, so Git Bash cannot rewrite `/mnt/c` paths,
 UNC files, variables, or nested shell commands on the way to Linux.
 
