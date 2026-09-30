@@ -1,8 +1,8 @@
 # pi-wsl
 
-Pi's `bash` tool is Git Bash. You need Linux, `/mnt/c`, and `\\wsl.localhost` to arrive uncorrupted.
-
-This extension spawn()s `System32\wsl.exe` and runs the command in WSL, so Git Bash never sees the text.
+Run Pi commands in WSL with the paths and quotes you actually typed. This
+extension calls `wsl.exe` directly, so Git Bash cannot rewrite `/mnt/c` paths,
+UNC files, variables, or nested shell commands on the way to Linux.
 
 ## Why this exists
 

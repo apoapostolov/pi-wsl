@@ -2,36 +2,21 @@
 
 ## 0.3.9 - 2026-09-29
 
-A detached job can be stopped from Pi.
+Stop a detached WSL job from Pi, including child processes it started.
 
 ### Added
 
-- `/wsl job stop <pid>` terminates a detached job. The handle's `PID=` is the
-  job's process group, so the stop reaches the body's children as well as the
-  wrapper, which a single-pid `kill` left running as orphans. TERM first, then
-  KILL for anything still standing after a five second grace, and the result
-  says which happened. A group that is already gone is reported, not signalled.
-- Detached jobs need `setsid` from util-linux. Without it the job exits `127`
-  instead of starting.
+- `/wsl job stop <pid>` asks the job's process group to stop, waits five
+  seconds, then forces anything still running to exit. A finished job is
+  reported as already gone.
+- Detached jobs require `setsid` from util-linux. If it is missing, the
+  launch fails clearly with exit code 127.
 
-### Changed
+### For existing job handles
 
-- A background job is launched with `setsid`, so it gets its own session and
-  process group. Previously it shared the tool's own process group, which made a
-  group signal unsafe: `kill -TERM -<pid>` against a handle from the old
-  launcher would have signalled the tool's own shell. Only handles from 0.3.9
-  onward carry a usable process group.
-
-### Known limitations
-
-- Right after a stop, a not-yet-reaped process can leave the group briefly
-  visible, so a stop that only needed TERM may occasionally be worded as
-  `KILL sent`. It is cosmetic and does not leak anything.
-- `/wsl job <pid> <log>` watches the group leader, while `/wsl job stop <pid>`
-  watches the whole group. The asymmetry is deliberate: status answers whether
-  the launched body finished, and stop has to catch a child that outlived the
-  leader. Changing status to the group form would report a finished job as
-  running for as long as any stray grandchild lived.
+Only jobs launched by 0.3.9 or later have their own process group. Older
+handles must not be stopped with the new group command. A just-stopped job
+may briefly report that KILL was sent while its process is being reaped.
 
 ## 0.3.8 - 2026-09-28
 
